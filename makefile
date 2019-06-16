@@ -1,4 +1,4 @@
-objlist := editor utility cJSON gui level
+objlist := editor utility cJSON gui level draw
 program_title = editor
 
 CC := gcc

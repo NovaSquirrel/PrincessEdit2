@@ -13,42 +13,52 @@
   },
 
   "Header": {
-    "Music": "NONE",
+    "Music": null,
+    "Background": null,
     "SpriteGFX": [
-      "SP_WALKER",
-      "SP_CANNON",
-      "SP_FIRE",
-      "SP_KING"
+      "SPWalker",
+      "SPCannon"
+    ],
+    "Flags": ["VerticalScrolling"],
+    "BGPalette": [
+      "FGCommon",
+      "FGGrassy",
+      null,
+      null,
+      null,
+      null,
+      null,
+      "BGForest"
     ],
     "GFXUpload": [
-      "PAL_GRASSY",
-      "BG_COMMON",
-      "BG_GRASSY"
+      "FGCommon",
+      "FGGrassy",
+      "FGTropicalWood",
+      "BGForest"
     ],
-    "BGColor": 49
+    "BGColor": "RGB(15,23,31)"
   },
 
   "Layers": [
     { "Name": "Foreground",
       "Type": "Rectangle",
-      "Tileset": "novafg",
+      "Tileset": "nova2fg",
       "Data": [
-        {"Id": "GROUND",   "X": 0, "Y": 13, "W": 20, "H": 2},
-        {"Id": "GROUND",   "X": 10, "Y": 5, "W": 5, "H": 2}
+        {"Id": "SolidBlock",   "X": 0, "Y": 30, "W": 20, "H": 2}
       ]
     },
     { "Name": "Sprites",
       "Type": "Sprite",
-      "Tileset": "novasp",
+      "Tileset": "nova2sp",
       "Data": [
-        {"Id": "GOOMBA", "XFlip": true, "X":17, "Y":7}
+        {"Id": "Sneaker", "XFlip": true, "X":17, "Y":29}
       ]
     },
     { "Name": "Control",
       "Type": "Control",
-      "Tileset": "novact",
+      "Tileset": "nova2ct",
       "Data": [
-        {"Id": "PLAYER_START_R", "X":7, "Y":5}
+        {"Id": "PLAYER_START_R", "X":7, "Y":29}
       ]
     }
   ]

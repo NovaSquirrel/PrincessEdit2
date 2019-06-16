@@ -30,53 +30,63 @@ enum LayerTypes {
   LAYER_CONTROL
 };
 
+// A rectangle belonging to a layer
 typedef struct LevelRect {
-	char Style;
 	short Type, X, Y, W, H;
-	char Flips, RectType;
+	char Flips;	// Any flips
+	char Style; // For rectangles and right triangles currently
+	char Selected; // Currently selected?
 	char *ExtraInfo;
 	struct LevelRect *Prev, *Next;
 } LevelRect;
 
+// A level layer's rectangle list gets rendered to a 2D array of this structure
+// for faster drawing and other things.
 typedef struct LevelTile {
-  short Graphic;          // -1 if no tile
-  LevelRect *Rect;        // or NULL if not Rectangle mode
-  signed short Angle;
-  char Flips;         // SDL_FLIP_NONE, SDL_FLIP_HORIZONTAL, SDL_FLIP_VERTICAL
+	short Graphic;      // -1 if no tile
+	LevelRect *Rect;    // So you can click on a tile and get a rectangle
+	char Flips;         // SDL_FLIP_NONE, SDL_FLIP_HORIZONTAL, SDL_FLIP_VERTICAL
 } LevelTile;
 
+// For matching tileset names to coordinates on the tilesheet
 typedef struct TilesetEntry { // convert to some sort of hash table later
-  int Id;                     // 32 bytes total
-  char Name[28];
+	int Id;                   // 32 bytes total
+	char Name[28];
 } TilesetEntry;
 
+// Info about each layer of the level
 typedef struct LayerInfo {
-  SDL_Texture *Texture; // tileset texture
-  int TextureW, TextureH;
-  int Type;
-  char LayerHidden;
-  char Name[32];
-  char TilesetName[32];
-  TilesetEntry *TilesetLookup;
-  unsigned int TileWidth, TileHeight, LayerWidth, LayerHeight;
-  LevelTile *Map;
-  LevelRect *Rects;
-  cJSON *JSON;
+	SDL_Texture *Texture; // tileset texture
+	int TextureW, TextureH;
+	int Type;
+	char LayerHidden;
+	char Name[32];
+	char TilesetName[32];
+	TilesetEntry *TilesetLookup;
+	unsigned int TileWidth, TileHeight, LayerWidth, LayerHeight;
+	LevelTile *Map;
+	LevelRect *Rects;
+	cJSON *JSON;
 } LayerInfo;
 
 enum SysCursorId {
-  SYSCURSOR_NORMAL,
-  SYSCURSOR_WAIT,
-  SYSCURSOR_SIZE_NS,
-  SYSCURSOR_SIZE_EW,
-  SYSCURSOR_SIZE_NWSE,
-  SYSCURSOR_SIZE_NESW,
-  SYSCURSOR_SIZE_ALL,
-  SYSCURSOR_HAND,
-  SYSCURSOR_DISABLE,
-  SYSCURSOR_MAX
+	SYSCURSOR_NORMAL,
+	SYSCURSOR_WAIT,
+	SYSCURSOR_SIZE_NS,
+	SYSCURSOR_SIZE_EW,
+	SYSCURSOR_SIZE_NWSE,
+	SYSCURSOR_SIZE_NESW,
+	SYSCURSOR_SIZE_ALL,
+	SYSCURSOR_HAND,
+	SYSCURSOR_DISABLE,
+	SYSCURSOR_MAX
 };
 extern SDL_Cursor *SystemCursors[SYSCURSOR_MAX];
+
+typedef struct FontSet {
+  TTF_Font *Font[4];
+  int Width, Height;
+} FontSet;
 
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -90,7 +100,14 @@ extern cJSON *LevelJSON;
 extern int LevelW, LevelH, GridW, GridH, TileW, TileH;
 extern char LevelFilename[50];
 extern char LevelFilenameFull[260];
+extern LayerInfo *LayerInfos;
+extern int NumLayers;
 
+extern SDL_Color FGColor;
+extern SDL_Color BGColor;
+extern SDL_Color SelectColor;
+extern SDL_Color AvailableColor;
+extern SDL_Color GridColor;
 
 void SDL_MessageBox(int Type, const char *Title, SDL_Window *Window, const char *fmt, ...);
 void strlcpy(char *Destination, const char *Source, int MaxLength);
@@ -113,3 +130,10 @@ int cJSON_Length(cJSON *Array);
 int cJSON_IntValue(cJSON *JSON, const char *Var, int Default);
 void cJSON_IntValueSet(cJSON *JSON, const char *Var, int Value);
 int LoadLevel(const char *Path);
+void LoadTilesets();
+void RenderSimpleText(SDL_Renderer *Renderer, FontSet *Font, int X, int Y, int Flags, const char *Text);
+void RenderFormatText(SDL_Renderer *Renderer, FontSet *Font, int X, int Y, int Flags, const char *Text, ...);
+int Load_FontSet(FontSet *Fonts, int Size, const char *Font1, const char *Font2, const char *Font3, const char *Font4);
+void Free_FontSet(FontSet *Fonts);
+void RenderLevelRects(int Layer);
+int IsInsideRect(int X1, int Y1, int X2, int Y2, int W, int H);

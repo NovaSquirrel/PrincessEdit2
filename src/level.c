@@ -40,6 +40,7 @@ int TilesetLookupStringToIndex(int Layer, const char *String) {
 	return -1;
 }
 
+// Go through the list of rectangles for a layer and convert it into a 2D array of tiles
 void RenderLevelRects(int Layer) {
 	memset(LayerInfos[Layer].Map, 0, sizeof(LevelTile)*LayerInfos[Layer].LayerWidth*LayerInfos[Layer].LayerHeight);
 	LevelRect *Rect = LayerInfos[Layer].Rects;
@@ -94,10 +95,6 @@ LevelRect *JSONtoLevelRect(cJSON *JSON, int Layer) {
 void FreeLayers() {
 	if(!LayerInfos) return;
 	for(int i=0;i<NumLayers;i++) {
-/*	for(int x=0;x<LayerInfos[i].LayerWidth;x++)
-			for(int y=0;y<LayerInfos[i].LayerHeight;y++)
-				if(LayerInfos[i].Map[LayerInfos[i].LayerWidth * y + x].DrawInfo)
-					free(LayerInfos[i].Map[LayerInfos[i].LayerWidth * y + x].DrawInfo);*/
 		SDL_DestroyTexture(LayerInfos[i].Texture);
 		free(LayerInfos[i].Map);
 		free(LayerInfos[i].TilesetLookup);
@@ -225,7 +222,7 @@ int UpdateLevelFromJSON() {
 		strlcpy(LayerInfos[i].TilesetName, Tileset, sizeof(LayerInfos[i].TilesetName));
 		LoadTilesetInitial(i);
 
-		// parse all the rectangles in the JSON and turn it into eh linka list
+		// Parse all of the rectangles in the JSON and allocate a list
 		cJSON *JSONRect = cJSON_GetObjectItem(Layers, "Data");
 		LevelRect *PrevRect = NULL;
 		if(JSONRect && JSONRect->child) {
