@@ -60,14 +60,6 @@ void MouseMove(int x, int y) {
 	SetACursor = 0;
 	AvailableRect = NULL;
 
-	if(!(SDL_GetMouseState(NULL, NULL) & SDL_BUTTON(SDL_BUTTON_LEFT))) {
-		DraggingMove = 0;
-		DraggingResize = 0;
-		if(DraggingSelect)
-			Redraw = 1;
-		DraggingSelect = 0;
-	}
-
 	if(EditorMode == MODE_LEVEL) {
 		// If the mouse is inside the map view
 		if(IsInsideRect(x, y, MapViewX, MapViewY, MapViewWidthP, MapViewHeightP)) {
@@ -527,13 +519,15 @@ void run_gui() {
 									Prev->Next = R->Next;
 								if(Next)
 									Next->Prev = R->Prev;
+								if(R == LayerInfos[CurLayer].Rects)
+									LayerInfos[CurLayer].Rects = Next;
 								free(R);
 								R = Next;
 								continue;
 							}
 							R = R->Next;
 						}
-
+						DraggingSelect = 0;
 						RerenderMap = 1;
 						Redraw = 1;
 						break;
@@ -543,6 +537,14 @@ void run_gui() {
 					LeftClick();
 				if(e.button.button == SDL_BUTTON_RIGHT)
 					RightClick();
+			} else if(e.type == SDL_MOUSEBUTTONUP) {
+				if(e.button.button == SDL_BUTTON_LEFT) {
+					DraggingMove = 0;
+					DraggingResize = 0;
+					if(DraggingSelect)
+						Redraw = 1;
+					DraggingSelect = 0;
+				}
 			} else if(e.type == SDL_TEXTINPUT) {
 				KeyPress(*e.text.text);
 			} else if(e.type == SDL_WINDOWEVENT) {
