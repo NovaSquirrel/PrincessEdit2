@@ -68,6 +68,8 @@ void MouseMove(int x, int y) {
 			if(NewY < 0) return;
 
 			AvailableRect = LayerInfos[CurLayer].Map[(NewY+CameraY)*LayerInfos[CurLayer].LayerWidth+(NewX+CameraX)].Rect;
+			if(AvailableRect)
+				GUI_SetCursor(SYSCURSOR_HAND);
 			if(AvailableRect && AvailableRect->Selected)
 				AvailableRect = NULL;
 
@@ -209,6 +211,7 @@ void RightClick() {
 		}
 	}
 
+	DraggingMove = 1;
 	Redraw = 1;
 	RerenderMap = 1;
 }
@@ -502,7 +505,11 @@ void run_gui() {
 			} else if(e.type == SDL_MOUSEMOTION) {
 				MouseMove(e.motion.x, e.motion.y);
 			} else if(e.type == SDL_KEYDOWN) {
-				switch(e.key.keysym.sym) { 
+				switch(e.key.keysym.sym) {
+					case SDLK_s: // Save
+						if(e.key.keysym.mod & KMOD_CTRL)
+							SaveLevel();
+						break;
 					case SDLK_DELETE:
 						AvailableRect = NULL;
 
@@ -538,7 +545,7 @@ void run_gui() {
 				if(e.button.button == SDL_BUTTON_RIGHT)
 					RightClick();
 			} else if(e.type == SDL_MOUSEBUTTONUP) {
-				if(e.button.button == SDL_BUTTON_LEFT) {
+				if(e.button.button == SDL_BUTTON_LEFT || e.button.button == SDL_BUTTON_RIGHT) {
 					DraggingMove = 0;
 					DraggingResize = 0;
 					if(DraggingSelect)

@@ -130,6 +130,7 @@ int cJSON_Length(cJSON *Array);
 int cJSON_IntValue(cJSON *JSON, const char *Var, int Default);
 void cJSON_IntValueSet(cJSON *JSON, const char *Var, int Value);
 int LoadLevel(const char *Path);
+void SaveLevel();
 void LoadTilesets();
 void RenderSimpleText(SDL_Renderer *Renderer, FontSet *Font, int X, int Y, int Flags, const char *Text);
 void RenderFormatText(SDL_Renderer *Renderer, FontSet *Font, int X, int Y, int Flags, const char *Text, ...);
