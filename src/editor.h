@@ -64,8 +64,8 @@ typedef struct LayerInfo {
 	char TilesetName[32];
 	TilesetEntry *TilesetLookup;
 	unsigned int TileWidth, TileHeight, LayerWidth, LayerHeight;
-	LevelTile *Map;
-	LevelRect *Rects;
+	LevelTile *Map;   // Rendered from Rects
+	LevelRect *Rects; // The actual level data
 	cJSON *JSON;
 } LayerInfo;
 
@@ -138,3 +138,7 @@ int Load_FontSet(FontSet *Fonts, int Size, const char *Font1, const char *Font2,
 void Free_FontSet(FontSet *Fonts);
 void RenderLevelRects(int Layer);
 int IsInsideRect(int X1, int Y1, int X2, int Y2, int W, int H);
+
+void Undo();
+void Redo();
+void UndoStep(int Layer);

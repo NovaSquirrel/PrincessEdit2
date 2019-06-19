@@ -56,6 +56,77 @@ SDL_Rect MakeSelectRect(LevelRect *Rect, int Offset) {
 	return Select;
 }
 
+void KeyDown(SDL_Keysym key) {
+	int UndoMade = 0;
+
+	switch(key.scancode) {
+		case SDL_SCANCODE_1: CurLayer = 0; Redraw = 1; break;
+		case SDL_SCANCODE_2: if(NumLayers >= 2) CurLayer = 1; Redraw = 1; break;
+		case SDL_SCANCODE_3: if(NumLayers >= 3) CurLayer = 2; Redraw = 1; break;
+		case SDL_SCANCODE_4: if(NumLayers >= 4) CurLayer = 3; Redraw = 1; break;
+		case SDL_SCANCODE_5: if(NumLayers >= 5) CurLayer = 4; Redraw = 1; break;
+		case SDL_SCANCODE_6: if(NumLayers >= 6) CurLayer = 5; Redraw = 1; break;
+		case SDL_SCANCODE_7: if(NumLayers >= 7) CurLayer = 6; Redraw = 1; break;
+		case SDL_SCANCODE_8: if(NumLayers >= 8) CurLayer = 7; Redraw = 1; break;
+		case SDL_SCANCODE_9: if(NumLayers >= 9) CurLayer = 8; Redraw = 1; break;
+		case SDL_SCANCODE_0: if(NumLayers >= 10) CurLayer = 9; Redraw = 1; break;
+		default:
+			break;
+	}
+	switch(key.sym) {
+		case SDLK_z: // Undo
+			Undo();
+			RerenderMap = 1;
+			Redraw = 1;
+			break;
+		case SDLK_y: // Redo
+			Redo();
+			RerenderMap = 1;
+			Redraw = 1;
+			break;
+
+		case SDLK_s: // Save
+			if(key.mod & KMOD_CTRL)
+				SaveLevel();
+			break;
+		case SDLK_DELETE:
+			AvailableRect = NULL;
+
+
+			// Erase all selected rectangles
+			LevelRect *R = LayerInfos[CurLayer].Rects;
+			while(R) {
+				if(R->Selected) {
+					if(!UndoMade) {
+						UndoMade = 1;
+						UndoStep(CurLayer);
+					}
+					if(R->ExtraInfo)
+						free(R->ExtraInfo);
+					LevelRect *Prev = R->Prev;
+					LevelRect *Next = R->Next;
+
+					if(Prev)
+						Prev->Next = R->Next;
+					if(Next)
+						Next->Prev = R->Prev;
+					if(R == LayerInfos[CurLayer].Rects)
+						LayerInfos[CurLayer].Rects = Next;
+					free(R);
+					R = Next;
+					continue;
+				}
+				R = R->Next;
+			}
+			DraggingSelect = 0;
+			RerenderMap = 1;
+			Redraw = 1;
+			break;
+		default:
+			break;
+	}
+}
+
 void MouseMove(int x, int y) {
 	SetACursor = 0;
 	AvailableRect = NULL;
@@ -199,7 +270,9 @@ void RightClick() {
 
 			Copy->X = Copy->X - Base->X + CursorX + CameraX;
 			Copy->Y = Copy->Y - Base->Y + CursorY + CameraY;
-			
+			if(Copy->ExtraInfo)
+				Copy->ExtraInfo = strdup(Copy->ExtraInfo);
+
 			// Fix up the links
 			Copy->Prev = Tail;
 			Copy->Next = NULL;
@@ -216,7 +289,7 @@ void RightClick() {
 	RerenderMap = 1;
 }
 
-void KeyPress(char Key) {
+void TextInput(char Key) {
 	switch(Key) {
 		case 'a': CameraX--; Redraw = 1; break;
 		case 's': CameraY++; Redraw = 1; break;
@@ -283,6 +356,30 @@ void KeyPress(char Key) {
 			Redraw = 1;
 			RerenderMap = 1;
 			break;
+
+		case 'x':
+			for(LevelRect *R = LayerInfos[CurLayer].Rects; R; R=R->Next)
+				if(R->Selected)
+					R->Flips ^= SDL_FLIP_HORIZONTAL;
+			Redraw = 1;
+			RerenderMap = 1;
+			break;
+		case 'y':
+			for(LevelRect *R = LayerInfos[CurLayer].Rects; R; R=R->Next)
+				if(R->Selected)
+					R->Flips ^= SDL_FLIP_VERTICAL;
+			Redraw = 1;
+			RerenderMap = 1;
+			break;
+		case 'Y':
+			for(LevelRect *R = LayerInfos[CurLayer].Rects; R; R=R->Next)
+				if(R->Selected)
+					R->Flips = 0;
+			Redraw = 1;
+			RerenderMap = 1;
+			break;
+
+
 	}
 }
 
@@ -505,40 +602,7 @@ void run_gui() {
 			} else if(e.type == SDL_MOUSEMOTION) {
 				MouseMove(e.motion.x, e.motion.y);
 			} else if(e.type == SDL_KEYDOWN) {
-				switch(e.key.keysym.sym) {
-					case SDLK_s: // Save
-						if(e.key.keysym.mod & KMOD_CTRL)
-							SaveLevel();
-						break;
-					case SDLK_DELETE:
-						AvailableRect = NULL;
-
-						// Erase all selected rectangles
-						LevelRect *R = LayerInfos[CurLayer].Rects;
-						while(R) {
-							if(R->Selected) {
-								if(R->ExtraInfo)
-									free(R->ExtraInfo);
-								LevelRect *Prev = R->Prev;
-								LevelRect *Next = R->Next;
-
-								if(Prev)
-									Prev->Next = R->Next;
-								if(Next)
-									Next->Prev = R->Prev;
-								if(R == LayerInfos[CurLayer].Rects)
-									LayerInfos[CurLayer].Rects = Next;
-								free(R);
-								R = Next;
-								continue;
-							}
-							R = R->Next;
-						}
-						DraggingSelect = 0;
-						RerenderMap = 1;
-						Redraw = 1;
-						break;
-				}
+				KeyDown(e.key.keysym);
 			} else if(e.type == SDL_MOUSEBUTTONDOWN) {
 				if(e.button.button == SDL_BUTTON_LEFT)
 					LeftClick();
@@ -553,7 +617,7 @@ void run_gui() {
 					DraggingSelect = 0;
 				}
 			} else if(e.type == SDL_TEXTINPUT) {
-				KeyPress(*e.text.text);
+				TextInput(*e.text.text);
 			} else if(e.type == SDL_WINDOWEVENT) {
 				switch(e.window.event) {
 					case SDL_WINDOWEVENT_SIZE_CHANGED:

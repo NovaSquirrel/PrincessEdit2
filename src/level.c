@@ -26,6 +26,113 @@ char LevelFilenameFull[260];
 LayerInfo *LayerInfos = NULL;
 int NumLayers;
 
+
+#define UNDO_STEPS 10
+int UndoIndex = 0;
+int UndoLayer[UNDO_STEPS];
+LevelRect *UndoRect[UNDO_STEPS];
+int RedoLayer;
+LevelRect *RedoRect = NULL;
+
+void FreeRectList(LevelRect *R) {
+	while(R) {
+		if(R->ExtraInfo)
+			free(R->ExtraInfo);
+		LevelRect *Next = R->Next;
+		free(R);
+		R = Next;
+	}
+}
+
+LevelRect *CloneRectList(LevelRect *R) {
+	LevelRect *Head = NULL, *Tail = NULL;
+
+	while(R) {
+		LevelRect *Copy = (LevelRect*)malloc(sizeof(LevelRect));
+		*Copy = *R;
+
+		// Backward link
+		Copy->Prev = Tail;
+		// Forward link
+		if(Tail)
+			Tail->Next = Copy;
+
+		// Duplicate the extra information
+		if(Copy->ExtraInfo)
+			Copy->ExtraInfo = strdup(Copy->ExtraInfo);
+
+		// Establish the new head and tail
+		if(!Head) {
+			Head = Copy;
+		}
+
+		Tail = Copy;
+		R = R->Next;
+	}
+
+	return Head;
+}
+
+void UndoStep(int Layer) {
+	// Invalidate redo step
+	if(RedoRect) {
+		FreeRectList(RedoRect);
+		RedoRect = NULL;
+	}
+
+	// Move everything back
+	if(UndoIndex == UNDO_STEPS) {
+		if(UndoRect[0])
+			FreeRectList(UndoRect[0]);
+		for(int i=0; i<UNDO_STEPS-1; i++) {
+			UndoRect[i] = UndoRect[i+1];
+			UndoLayer[i] = UndoLayer[i+1];
+		}
+		UndoRect[UNDO_STEPS-1] = NULL;
+		UndoIndex--;
+	}
+
+	// Invalidate everything past the new undo point
+	for(int i=UndoIndex; i<UNDO_STEPS; i++) {
+		if(UndoRect[i]) {
+			FreeRectList(UndoRect[i]);
+			UndoRect[i] = NULL;
+		}
+	}
+
+	// Insert the undo information
+	UndoLayer[UndoIndex] = Layer;
+	UndoRect[UndoIndex] = CloneRectList(LayerInfos[Layer].Rects);
+	UndoIndex++;
+}
+
+void Undo() {
+	if(!UndoIndex)
+		return;
+	UndoIndex--;
+
+	if(RedoRect) {
+		FreeRectList(RedoRect);
+		RedoRect = NULL;
+	}
+	RedoRect = CloneRectList(LayerInfos[UndoLayer[UndoIndex]].Rects);
+	RedoLayer = UndoLayer[UndoIndex];
+
+	// Get rid of old list before replacing it
+	FreeRectList(LayerInfos[UndoLayer[UndoIndex]].Rects);
+	LayerInfos[UndoLayer[UndoIndex]].Rects = CloneRectList(UndoRect[UndoIndex]);
+}
+
+void Redo() {
+	if(!RedoRect)
+		return;
+	LevelRect *R = RedoRect;
+	RedoRect = NULL;
+	UndoStep(RedoLayer);
+	LayerInfos[RedoLayer].Rects = R;
+	RedoRect = NULL;
+}
+
 int TilesetLookupIdToIndex(int Layer, int Id) {
 	for(int i=0; LayerInfos[Layer].TilesetLookup[i].Id >= 0; i++)
 		if(LayerInfos[Layer].TilesetLookup[i].Id == Id)
@@ -245,6 +352,7 @@ int UpdateLevelFromJSON() {
 }
 
 int LoadLevel(const char *Path) {
+	memset(UndoRect, 0, sizeof(UndoRect));
 	strlcpy(LevelFilename, FilenameOnly(Path), sizeof(LevelFilename));
 	strlcpy(LevelFilenameFull, Path, sizeof(LevelFilenameFull));
 	LevelJSON = cJSON_Load(Path);
