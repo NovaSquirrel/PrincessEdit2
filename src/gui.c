@@ -35,7 +35,11 @@ int CameraX = 0, CameraY = 0;
 int DraggingMove = 0, DraggingResize = 0, DraggingSelect = 0;
 int DraggingSelectX, DraggingSelectY;
 int CursorX = 0, CursorY = 0, CursorShown = 0;
+int TPCursorX = 0, TPCursorY = 0, TPTilesWide, TPTilesTall;
 LevelRect *AvailableRect = NULL; // available level rectangle
+
+SDL_Texture *TPTexture  = NULL;
+SDL_Rect TPRect = {0, 0, 0, 0};
 
 enum {
 	MODE_LEVEL,
@@ -56,20 +60,42 @@ SDL_Rect MakeSelectRect(LevelRect *Rect, int Offset) {
 	return Select;
 }
 
+void WarpForLevelEditor() {
+	SDL_WarpMouseInWindow(window, MapViewX+CursorX*TileW+TileW/2, MapViewY+CursorY*TileH+TileH/2);
+}
+
+void WarpForTP() {
+	SDL_WarpMouseInWindow(window, TPRect.x+TPCursorX*(TileW+2)+(TileW+2)/2, TPRect.y+TPCursorY*(TileH+2)+(TileH+2)/2);
+}
+
+void UpdateTPRect() {
+	int TPW, TPH;
+	TPTexture = LayerInfos[CurLayer].Texture;
+	SDL_QueryTexture(TPTexture, NULL, NULL, &TPW, &TPH);
+
+	TPTilesWide = TPW / TileW;
+	TPTilesTall = TPH / TileH;
+				
+	TPRect.x = ScreenWidth/2-(TPTilesWide*(TileW+2))/2;
+	TPRect.y = ScreenHeight/2-(TPTilesTall*(TileH+2))/2;
+	TPRect.w = TPTilesWide*(TileW+2);
+	TPRect.h = TPTilesTall*(TileH+2);
+}
+
 void KeyDown(SDL_Keysym key) {
 	int UndoMade = 0;
 
 	switch(key.scancode) {
-		case SDL_SCANCODE_1: CurLayer = 0; Redraw = 1; break;
-		case SDL_SCANCODE_2: if(NumLayers >= 2) CurLayer = 1; Redraw = 1; break;
-		case SDL_SCANCODE_3: if(NumLayers >= 3) CurLayer = 2; Redraw = 1; break;
-		case SDL_SCANCODE_4: if(NumLayers >= 4) CurLayer = 3; Redraw = 1; break;
-		case SDL_SCANCODE_5: if(NumLayers >= 5) CurLayer = 4; Redraw = 1; break;
-		case SDL_SCANCODE_6: if(NumLayers >= 6) CurLayer = 5; Redraw = 1; break;
-		case SDL_SCANCODE_7: if(NumLayers >= 7) CurLayer = 6; Redraw = 1; break;
-		case SDL_SCANCODE_8: if(NumLayers >= 8) CurLayer = 7; Redraw = 1; break;
-		case SDL_SCANCODE_9: if(NumLayers >= 9) CurLayer = 8; Redraw = 1; break;
-		case SDL_SCANCODE_0: if(NumLayers >= 10) CurLayer = 9; Redraw = 1; break;
+		case SDL_SCANCODE_1: CurLayer = 0; Redraw = 1; UpdateTPRect(); break;
+		case SDL_SCANCODE_2: if(NumLayers >= 2) CurLayer = 1; Redraw = 1; UpdateTPRect(); break;
+		case SDL_SCANCODE_3: if(NumLayers >= 3) CurLayer = 2; Redraw = 1; UpdateTPRect(); break;
+		case SDL_SCANCODE_4: if(NumLayers >= 4) CurLayer = 3; Redraw = 1; UpdateTPRect(); break;
+		case SDL_SCANCODE_5: if(NumLayers >= 5) CurLayer = 4; Redraw = 1; UpdateTPRect(); break;
+		case SDL_SCANCODE_6: if(NumLayers >= 6) CurLayer = 5; Redraw = 1; UpdateTPRect(); break;
+		case SDL_SCANCODE_7: if(NumLayers >= 7) CurLayer = 6; Redraw = 1; UpdateTPRect(); break;
+		case SDL_SCANCODE_8: if(NumLayers >= 8) CurLayer = 7; Redraw = 1; UpdateTPRect(); break;
+		case SDL_SCANCODE_9: if(NumLayers >= 9) CurLayer = 8; Redraw = 1; UpdateTPRect(); break;
+		case SDL_SCANCODE_0: if(NumLayers >= 10) CurLayer = 9; Redraw = 1; UpdateTPRect(); break;
 		default:
 			break;
 	}
@@ -82,6 +108,26 @@ void KeyDown(SDL_Keysym key) {
 		case SDLK_y: // Redo
 			Redo();
 			RerenderMap = 1;
+			Redraw = 1;
+			break;
+
+		case SDLK_e: // Toggle the picker
+			if(EditorMode == MODE_LEVEL) {
+				for(LevelRect *R = LayerInfos[CurLayer].Rects; R; R=R->Next) {
+					if(R->Selected) {
+						TPCursorX = R->Type & 0xff;
+						TPCursorY = R->Type >> 8;
+					}
+				}
+
+				UpdateTPRect();
+
+				EditorMode = MODE_PICKER;
+				WarpForTP();
+			} else {
+				EditorMode = MODE_LEVEL;
+				WarpForLevelEditor();
+			}
 			Redraw = 1;
 			break;
 
@@ -192,7 +238,11 @@ void MouseMove(int x, int y) {
 			CursorShown = 0;
 		}
 	} else {
-
+		if(IsInsideRect(x, y, TPRect.x, TPRect.y, TPRect.w, TPRect.h)) {
+			TPCursorY = (y-TPRect.y) / (TileH+2);
+			TPCursorX = (x-TPRect.x) / (TileW+2);
+			Redraw = 1;
+		}
 	}
 
 	// Normal cursor if none was set otherwise
@@ -231,6 +281,38 @@ void LeftClick() {
 
 			Redraw = 1;
 		}
+	} else {
+		// Unselect all first
+		for(LevelRect *R = LayerInfos[CurLayer].Rects; R; R=R->Next) {
+			R->Selected = 0;
+		}
+
+		LevelRect *End = LayerInfos[CurLayer].Rects;
+		while(End->Next)
+			End = End->Next;
+		LevelRect *Copy = (LevelRect*)calloc(1, sizeof(LevelRect));
+
+		int Type = TilesetLookupIdToIndex(CurLayer, (TPCursorY<<8)|TPCursorX);
+		if(Type == - 1)
+			return;
+
+		Copy->Selected = 1;
+		Copy->W = 1;
+		Copy->H = 1;
+		Copy->X = CursorX + CameraX;
+		Copy->Y = CursorY + CameraY;
+		Copy->Type = Type;
+
+		// Set the links
+		Copy->Prev = End;
+		Copy->Next = NULL;
+		End->Next = Copy;
+
+		DraggingMove = 1;
+		Redraw = 1;
+		RerenderMap = 1;
+		EditorMode = MODE_LEVEL;
+		WarpForLevelEditor();
 	}
 }
 
@@ -545,6 +627,34 @@ void DrawGUI() {
 		SDL_RenderDrawRect(ScreenRenderer, &Select);
 	}
 
+	// Draw outline around the map edit view
+	SDL_SetRenderDrawColor(ScreenRenderer, FGColor.r, FGColor.g, FGColor.b, 255);
+	rect(ScreenRenderer, MapViewX, MapViewY, MapViewX+MapViewWidthP, MapViewY+MapViewHeightP);
+
+	// Draw the tile picker
+	if(EditorMode == MODE_PICKER) {
+		SDL_SetRenderDrawColor(ScreenRenderer, 255, 255, 255, 255);
+		SDL_RenderFillRect(ScreenRenderer, &TPRect);
+
+		for(int i=0; i<TPTilesWide; i++) {
+			for(int j=0; j<TPTilesTall; j++) {
+				blit(TPTexture, ScreenRenderer, i*TileW, j*TileH, TPRect.x+i*(TileW+2)+1, TPRect.y+j*(TileH+2)+1, TileW, TileH);
+			}
+		}
+
+		// Cursor
+		SDL_Rect Select = {TPRect.x+TPCursorX*(TileW+2), TPRect.y+TPCursorY*(TileH+2), TileW+2, TileH+2};
+		SDL_SetRenderDrawColor(ScreenRenderer, SelectColor.r, SelectColor.g, SelectColor.b, 255);
+		SDL_SetRenderDrawBlendMode(ScreenRenderer, SDL_BLENDMODE_MOD);
+		SDL_RenderFillRect(ScreenRenderer, &Select);
+		SDL_SetRenderDrawBlendMode(ScreenRenderer, SDL_BLENDMODE_NONE);
+		SDL_RenderDrawRect(ScreenRenderer, &Select);
+
+		// Draw the outline
+		SDL_SetRenderDrawColor(ScreenRenderer, FGColor.r, FGColor.g, FGColor.b, 255);
+		rect(ScreenRenderer, TPRect.x-1, TPRect.y-1, TPRect.x+TPRect.w, TPRect.y+TPRect.h);
+	}
+
 	SDL_RenderPresent(ScreenRenderer);
 }
 
@@ -632,11 +742,6 @@ void run_gui() {
 			DrawGUI();
 			Redraw = 0;
 		}
-
-		SDL_SetRenderDrawColor(ScreenRenderer, 255, 255, 255, 255);
-		SDL_RenderClear(ScreenRenderer);
-		SDL_SetRenderDrawColor(ScreenRenderer, 0, 255, 0, 255);
-		rectfill(ScreenRenderer, 10, 10, 50, 50);
 
 		SDL_Delay(17);
 		retraces++;
