@@ -115,8 +115,9 @@ void KeyDown(SDL_Keysym key) {
 			if(EditorMode == MODE_LEVEL) {
 				for(LevelRect *R = LayerInfos[CurLayer].Rects; R; R=R->Next) {
 					if(R->Selected) {
-						TPCursorX = R->Type & 0xff;
-						TPCursorY = R->Type >> 8;
+						int Type = LayerInfos[CurLayer].TilesetLookup[R->Type].Id;
+						TPCursorX = Type & 0xff;
+						TPCursorY = Type >> 8;
 					}
 				}
 
@@ -383,6 +384,12 @@ void TextInput(char Key) {
 		case 'W': CameraY-=10; Redraw = 1; break;
 
 		case 'i':
+			if(EditorMode == MODE_PICKER) {
+				TPCursorY = (TPCursorY-1) & 15;
+				WarpForTP();
+				Redraw = 1;
+				return;
+			}
 			for(LevelRect *R = LayerInfos[CurLayer].Rects; R; R=R->Next)
 				if(R->Selected)
 					R->Y--;
@@ -390,6 +397,12 @@ void TextInput(char Key) {
 			RerenderMap = 1;
 			break;
 		case 'j':
+			if(EditorMode == MODE_PICKER) {
+				TPCursorX = (TPCursorX-1) & 15;
+				WarpForTP();
+				Redraw = 1;
+				return;
+			}
 			for(LevelRect *R = LayerInfos[CurLayer].Rects; R; R=R->Next)
 				if(R->Selected)
 					R->X--;
@@ -397,6 +410,12 @@ void TextInput(char Key) {
 			RerenderMap = 1;
 			break;
 		case 'k':
+			if(EditorMode == MODE_PICKER) {
+				TPCursorY = (TPCursorY+1) & 15;
+				WarpForTP();
+				Redraw = 1;
+				return;
+			}
 			for(LevelRect *R = LayerInfos[CurLayer].Rects; R; R=R->Next)
 				if(R->Selected)
 					R->Y++;
@@ -404,6 +423,12 @@ void TextInput(char Key) {
 			RerenderMap = 1;
 			break;
 		case 'l':
+			if(EditorMode == MODE_PICKER) {
+				TPCursorX = (TPCursorX+1) & 15;
+				WarpForTP();
+				Redraw = 1;
+				return;
+			}
 			for(LevelRect *R = LayerInfos[CurLayer].Rects; R; R=R->Next)
 				if(R->Selected)
 					R->X++;
