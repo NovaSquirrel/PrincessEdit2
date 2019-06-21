@@ -289,8 +289,9 @@ void LeftClick() {
 		}
 
 		LevelRect *End = LayerInfos[CurLayer].Rects;
-		while(End->Next)
-			End = End->Next;
+		if(End != NULL)
+			while(End->Next)
+				End = End->Next;
 		LevelRect *Copy = (LevelRect*)calloc(1, sizeof(LevelRect));
 
 		int Type = TilesetLookupIdToIndex(CurLayer, (TPCursorY<<8)|TPCursorX);
@@ -305,9 +306,13 @@ void LeftClick() {
 		Copy->Type = Type;
 
 		// Set the links
-		Copy->Prev = End;
-		Copy->Next = NULL;
-		End->Next = Copy;
+		if(End == NULL) {
+			LayerInfos[CurLayer].Rects = Copy;
+		} else {
+			Copy->Prev = End;
+			Copy->Next = NULL;
+			End->Next = Copy;
+		}
 
 		DraggingMove = 1;
 		Redraw = 1;
