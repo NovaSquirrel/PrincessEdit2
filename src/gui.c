@@ -34,6 +34,7 @@ char TempText[100];
 int CameraX = 0, CameraY = 0;
 int DraggingMove = 0, DraggingResize = 0, DraggingSelect = 0;
 int DraggingSelectX, DraggingSelectY;
+int ResizeUp = 0, ResizeLeft = 0, ResizeRight = 0, ResizeDown = 0, ResizeOffer = 0;
 int CursorX = 0, CursorY = 0, CursorShown = 0;
 int TPCursorX = 0, TPCursorY = 0, TPTilesWide, TPTilesTall;
 LevelRect *AvailableRect = NULL; // available level rectangle
@@ -185,11 +186,45 @@ void MouseMove(int x, int y) {
             int NewY = (y - MapViewY) / TileH;
 			if(NewY < 0) return;
 
+			// Offer a rectangle to click on
 			AvailableRect = LayerInfos[CurLayer].Map[(NewY+CameraY)*LayerInfos[CurLayer].LayerWidth+(NewX+CameraX)].Rect;
 			if(AvailableRect)
 				GUI_SetCursor(SYSCURSOR_HAND);
 			if(AvailableRect && AvailableRect->Selected)
 				AvailableRect = NULL;
+
+			// Check if dragging to resize should be offered
+			if(!DraggingMove && !DraggingSelect && !DraggingResize) {
+				ResizeOffer = 0;
+				for(LevelRect *R = LayerInfos[CurLayer].Rects; R; R=R->Next) {
+					if(!R->Selected)
+						continue;
+					SDL_Rect Select1 = MakeSelectRect(R, 12);
+					SDL_Rect Select2 = MakeSelectRect(R, 0);
+
+					if(IsInsideRect(x, y, Select1.x, Select1.y, Select1.w, Select1.h) &&
+						!IsInsideRect(x, y, Select2.x, Select2.y, Select2.w, Select2.h)) {
+						ResizeUp    = y < Select2.y;
+						ResizeDown  = y > (Select2.y + Select2.h);
+						ResizeLeft  = x < Select2.x;
+						ResizeRight = x > (Select2.x + Select2.w);
+						ResizeOffer = 1;
+					}
+
+				}
+			}
+
+			// Resize cursor
+			if(DraggingResize || ResizeOffer) {
+				if((ResizeUp || ResizeDown) && !(ResizeLeft||ResizeRight))
+					GUI_SetCursor(SYSCURSOR_SIZE_NS);
+				if((ResizeLeft || ResizeRight) && !(ResizeUp||ResizeDown))
+					GUI_SetCursor(SYSCURSOR_SIZE_EW);
+				if((ResizeUp && ResizeLeft) || (ResizeDown && ResizeRight))
+					GUI_SetCursor(SYSCURSOR_SIZE_NWSE);
+				if((ResizeUp && ResizeRight) || (ResizeDown && ResizeLeft))
+					GUI_SetCursor(SYSCURSOR_SIZE_NESW);
+			}
 
 			// Moved to another map tile
 			if(NewX != CursorX || NewY != CursorY || !CursorShown) {
@@ -197,6 +232,7 @@ void MouseMove(int x, int y) {
 				int DiffX = NewX-CursorX;
 				int DiffY = NewY-CursorY;
 
+				// Drag selected rectangles
 				if(DraggingMove) {
 					for(LevelRect *R = LayerInfos[CurLayer].Rects; R; R=R->Next) {
 						if(R->Selected) {
@@ -207,11 +243,37 @@ void MouseMove(int x, int y) {
 					RerenderMap = 1;
 				}
 
+				// Resize selected rectangles
+				if(DraggingResize) {
+					for(LevelRect *R = LayerInfos[CurLayer].Rects; R; R=R->Next) {
+						if(R->Selected) {
+							if(ResizeUp) {
+								R->Y += DiffY;
+								R->H -= DiffY;
+								if(R->Y < 0)
+									R->Y = 0;
+							}
+							if(ResizeLeft) {
+								R->X += DiffX;
+								R->W -= DiffX;
+							}
+							if(ResizeDown)
+								R->H += DiffY;
+							if(ResizeRight)
+								R->W += DiffX;
+							if(R->W < 1) R->W = 1;
+							if(R->H < 1) R->H = 1;
+						}
+					}
+					RerenderMap = 1;
+				}
+
 				CursorX = NewX;
 				CursorY = NewY;
 
 				// Update the selections
 				if(DraggingSelect) {
+					// Start with nothing selected
 					for(LevelRect *R = LayerInfos[CurLayer].Rects; R; R=R->Next) {
 						R->Selected = 0;
 					}
@@ -254,6 +316,11 @@ void MouseMove(int x, int y) {
 void LeftClick() {
 	if(EditorMode == MODE_LEVEL) {
 		if(CursorShown) {
+			if(ResizeOffer && !DraggingResize) {
+				DraggingResize = 1;
+				return;
+			}
+
 			LevelRect *Under = LayerInfos[CurLayer].Map[(CursorY+CameraY)*LayerInfos[CurLayer].LayerWidth+(CursorX+CameraX)].Rect;
 			// Ctrl-click
 			if(SDL_GetModState() & KMOD_CTRL) {
