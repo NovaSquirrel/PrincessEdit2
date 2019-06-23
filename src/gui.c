@@ -452,7 +452,32 @@ void TextInput(char Key) {
 			Scan = Scan->Next; // Skip the first
 
 			while(Scan) {
-				break;
+				LevelRect *After = Scan->Next;
+				if(Scan->Selected) {
+					SDL_Rect Bounds = {Scan->X, Scan->Y, Scan->W, Scan->H};
+					// Seek backwards until an overlapping rectangle is found
+					for(LevelRect *V = Scan->Prev; V; V=V->Prev) {
+						SDL_Rect Bounds2 = {V->X, V->Y, V->W, V->H};
+						if(SDL_HasIntersection(&Bounds, &Bounds2)) {
+							// Remove from the old location
+							if(Scan->Prev)
+								Scan->Prev->Next = Scan->Next;
+							if(Scan->Next)
+								Scan->Next->Prev = Scan->Prev;
+
+							// Insert into the new one
+							Scan->Prev = V->Prev;
+							Scan->Next = V;
+							if(Scan->Prev)
+								Scan->Prev->Next = Scan;
+							V->Prev = Scan;
+
+							// Found one, so stop looking for one
+							break;
+						}
+					}
+				}
+				Scan = After;
 			}
 
 			Redraw = 1;
@@ -465,7 +490,34 @@ void TextInput(char Key) {
 			Scan = End;
 
 			while(Scan) {
-				break;
+				LevelRect *After = Scan->Prev;
+				if(Scan->Selected) {
+					SDL_Rect Bounds = {Scan->X, Scan->Y, Scan->W, Scan->H};
+					// Seek forwards until an overlapping rectangle is found
+					for(LevelRect *V = Scan->Next; V; V=V->Next) {
+						SDL_Rect Bounds2 = {V->X, V->Y, V->W, V->H};
+						if(SDL_HasIntersection(&Bounds, &Bounds2)) {
+							// Remove from the old location
+							if(Scan == LayerInfos[CurLayer].Rects)
+								LayerInfos[CurLayer].Rects = Scan->Next;
+							if(Scan->Prev)
+								Scan->Prev->Next = Scan->Next;
+							if(Scan->Next)
+								Scan->Next->Prev = Scan->Prev;
+
+							// Insert into the new one
+							Scan->Next = V->Next;
+							Scan->Prev = V;
+							if(Scan->Next)
+								Scan->Next->Prev = Scan;
+							V->Next = Scan;
+
+							// Found one, so stop looking for one
+							break;
+						}
+					}
+				}
+				Scan = After;
 			}
 
 			Redraw = 1;
