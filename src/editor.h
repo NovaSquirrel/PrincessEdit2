@@ -17,12 +17,6 @@
 
 ///////////////////////////////////////////////////////////////////////////////
 
-// shapes for individual "rectangles" to take
-enum {
-	STYLE_RECTANGLE,
-	STYLE_RIGHT_TRIANGLE
-};
-
 enum LayerTypes {
   LAYER_RECTANGLE,
   LAYER_SPRITE,
@@ -34,7 +28,6 @@ enum LayerTypes {
 typedef struct LevelRect {
 	short Type, X, Y, W, H;
 	char Flips;	// Any flips
-	char Style; // For rectangles and right triangles currently
 	char Selected; // Currently selected?
 	char *ExtraInfo;
 	struct LevelRect *Prev, *Next;
@@ -46,12 +39,20 @@ typedef struct LevelTile {
 	short Graphic;      // -1 if no tile
 	LevelRect *Rect;    // So you can click on a tile and get a rectangle
 	char Flips;         // SDL_FLIP_NONE, SDL_FLIP_HORIZONTAL, SDL_FLIP_VERTICAL
+	struct TilesetEntry *DrawInfo;
 } LevelTile;
+
+// shapes for tile types to take
+enum {
+	STYLE_RECTANGLE,
+	STYLE_RIGHT_TRIANGLE
+};
 
 // For matching tileset names to coordinates on the tilesheet
 typedef struct TilesetEntry { // convert to some sort of hash table later
-	int Id;                   // 32 bytes total
+	int Id;
 	char Name[28];
+	uint8_t Style, R, G, B, Var; // For alternative shapes
 } TilesetEntry;
 
 // Info about each layer of the level

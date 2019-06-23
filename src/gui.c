@@ -17,6 +17,7 @@
  * along with this program.	If not, see <http://www.gnu.org/licenses/>.
  */
 #include "editor.h"
+#include <math.h>
 
 int ScreenWidth = 800, ScreenHeight = 600;
 int quit = 0;
@@ -753,13 +754,26 @@ void DrawGUI() {
 		}
 	}
 	if(SelectedCount == 1) {
-		char Temp2[30] = "";
+		char Temp2[50] = "";
 		if(SelectedRect->W + SelectedRect->H != 2)
 			sprintf(Temp2, "<%ix%i> ", SelectedRect->W, SelectedRect->H);
-		sprintf(TempText, "%s %s%s", LayerInfos[CurLayer].TilesetLookup[SelectedRect->Type].Name, Temp2, SelectedRect->ExtraInfo?SelectedRect->ExtraInfo:"");
+
+		// Check for slope stuff
+		TilesetEntry *DrawInfo = &LayerInfos[CurLayer].TilesetLookup[SelectedRect->Type];
+		if(DrawInfo->Style == STYLE_RIGHT_TRIANGLE) {
+			double Ratio = (double)SelectedRect->W / (double)SelectedRect->H;
+			sprintf(TempText, "%.3f", Ratio);
+
+			if(floorf(Ratio) == Ratio && Ratio) { // Integer ratio
+				if(DrawInfo->Var & (1 << ((int)Ratio-1)))
+					strcat(TempText, " \xE2\x9C\x93 "); // Checkmark
+			}
+			strcat(Temp2, TempText);
+		}
+
 		int Graphic = LayerInfos[CurLayer].TilesetLookup[SelectedRect->Type].Id;
 		blitf(LayerInfos[CurLayer].Texture, ScreenRenderer, (Graphic&255)*TileW, (Graphic>>8)*TileH, 5, 5+MainFont.Height*1, TileW, TileH, SelectedRect->Flips);
-		RenderSimpleText(ScreenRenderer, &MainFont, 5+TileW+5, 5+MainFont.Height*1, 0, TempText);
+		RenderFormatText(ScreenRenderer, &MainFont, 5+TileW+5, 5+MainFont.Height*1, 0, "%s %s%s", LayerInfos[CurLayer].TilesetLookup[SelectedRect->Type].Name, Temp2, SelectedRect->ExtraInfo?SelectedRect->ExtraInfo:"");
 	} else if(SelectedCount > 1) {
 		RenderFormatText(ScreenRenderer, &MainFont, 5+TileW+5, 5+MainFont.Height*1, 0, "(%i selected)", SelectedCount);
 	}
@@ -782,11 +796,45 @@ void DrawGUI() {
 
 					// Is there a tile here?
 					if(Tile.Graphic != -1) {
-						// Draw with flips
-						if(Tile.Flips == 0)
-							blit(LayerInfos[L].Texture, ScreenRenderer, (Tile.Graphic&255)*TileW, (Tile.Graphic>>8)*TileH, MapViewX+x*TileW, MapViewY+y*TileH, TileW, TileH);
-						else
-							blitf(LayerInfos[L].Texture, ScreenRenderer, (Tile.Graphic&255)*TileW, (Tile.Graphic>>8)*TileH, MapViewX+x*TileW, MapViewY+y*TileH, TileW, TileH, Tile.Flips);
+						if(!Tile.DrawInfo) { // Regular rectangles
+							// Draw with flips
+							if(Tile.Flips == 0)
+								blit(LayerInfos[L].Texture, ScreenRenderer, (Tile.Graphic&255)*TileW, (Tile.Graphic>>8)*TileH, MapViewX+x*TileW, MapViewY+y*TileH, TileW, TileH);
+							else
+								blitf(LayerInfos[L].Texture, ScreenRenderer, (Tile.Graphic&255)*TileW, (Tile.Graphic>>8)*TileH, MapViewX+x*TileW, MapViewY+y*TileH, TileW, TileH, Tile.Flips);
+						} else { // Nonstandard shapes
+							if(Tile.DrawInfo->Style == STYLE_RIGHT_TRIANGLE) {
+								SDL_Rect Clip = {MapViewX+x*TileW, MapViewY+y*TileH, TileW, TileH};
+								SDL_RenderSetClipRect(ScreenRenderer, &Clip);
+								SDL_SetRenderDrawColor(ScreenRenderer, Tile.DrawInfo->R, Tile.DrawInfo->G, Tile.DrawInfo->B, 255);
+
+								LevelRect *R = Tile.Rect;
+								int RectBaseX = MapViewX + (R->X * TileW) - (CameraX * TileW);
+								int RectBaseY = MapViewY + (R->Y * TileH) - (CameraY * TileH);
+								int RectEndX = RectBaseX + (R->W * TileW) - 1;
+								int RectEndY = RectBaseY + (R->H * TileH) - 1;
+
+								// Diagonal
+								if(Tile.Flips == SDL_FLIP_HORIZONTAL || Tile.Flips == SDL_FLIP_VERTICAL)
+									SDL_RenderDrawLine(ScreenRenderer, RectBaseX, RectBaseY, RectEndX, RectEndY);
+								else
+									SDL_RenderDrawLine(ScreenRenderer, RectBaseX, RectEndY, RectEndX, RectBaseY);
+
+								// Horizontal
+								if(Tile.Flips & SDL_FLIP_VERTICAL)
+									SDL_RenderDrawLine(ScreenRenderer, RectBaseX, RectBaseY, RectEndX, RectBaseY);
+								else
+									SDL_RenderDrawLine(ScreenRenderer, RectBaseX, RectEndY, RectEndX, RectEndY);
+
+								// Vertical
+								if(Tile.Flips & SDL_FLIP_HORIZONTAL)
+									SDL_RenderDrawLine(ScreenRenderer, RectBaseX, RectBaseY, RectBaseX, RectEndY);
+								else
+									SDL_RenderDrawLine(ScreenRenderer, RectEndX, RectBaseY, RectEndX, RectEndY);
+
+								SDL_RenderSetClipRect(ScreenRenderer, NULL);
+							}
+						}
 					}
 				}
 	}

@@ -18,7 +18,7 @@
 0101 LedgeSolidLeft
 0102 LedgeSolidRight
 0103 LedgeMiddle
-0104 LedgeSlope
+0104 LedgeSlope T00FF00 124
 0200 Ladder
 0202 Rock
 0203 MoaiRight

@@ -153,15 +153,21 @@ void RenderLevelRects(int Layer) {
 	LevelRect *Rect = LayerInfos[Layer].Rects;
 	while(Rect) {
 		int Graphic = LayerInfos[Layer].TilesetLookup[Rect->Type].Id;
+		// Save a pointer to the tileset entry if it's a triangle or something
+		// but for the general case it's just a NULL because it's not required.
+		struct TilesetEntry *DrawInfo = NULL;
+		if(LayerInfos[Layer].TilesetLookup[Rect->Type].Style != STYLE_RECTANGLE)
+			DrawInfo = &LayerInfos[Layer].TilesetLookup[Rect->Type];
 		for(int x=0; x<Rect->W; x++)
 			for(int y=0; y<Rect->H; y++) {
 				int RealX = Rect->X + x;
 				int RealY = Rect->Y + y;
 				if(RealX >= 0 && RealX < LayerInfos[Layer].LayerWidth && RealY >= 0 && RealY < LayerInfos[Layer].LayerHeight) {
-					 int Index = RealY*LayerInfos[Layer].LayerWidth+RealX;
-					 LayerInfos[Layer].Map[Index].Graphic = Graphic;
-					 LayerInfos[Layer].Map[Index].Flips = Rect->Flips;
-					 LayerInfos[Layer].Map[Index].Rect = Rect;
+					int Index = RealY*LayerInfos[Layer].LayerWidth+RealX;
+					LayerInfos[Layer].Map[Index].Graphic = Graphic;
+					LayerInfos[Layer].Map[Index].Flips = Rect->Flips;
+					LayerInfos[Layer].Map[Index].Rect = Rect;
+					LayerInfos[Layer].Map[Index].DrawInfo = DrawInfo;
 				}
 			}
 		Rect = Rect->Next;
@@ -228,21 +234,49 @@ void LoadTilesetInitial(int i) {
 		for(Peek = Buffer; *Peek; Peek++)
 			if(*Peek == '\n')
 				Count++;
-		 LayerInfos[i].TilesetLookup = (TilesetEntry*)malloc(sizeof(TilesetEntry)*(Count+1));
-		 Peek = Buffer;
+		LayerInfos[i].TilesetLookup = (TilesetEntry*)calloc(Count+1, sizeof(TilesetEntry));
+		Peek = Buffer;
 		for(int j=0;Peek;j++) {
-			 // find the next
-			 Next = strchr(Peek, '\n');
-			 if(!Next) break;
-			 if(Next[-1] == '\r') Next[-1] = 0;
-			 *Next = 0;
+			// find the next
+			Next = strchr(Peek, '\n');
+			if(!Next) break;
+			if(Next[-1] == '\r') Next[-1] = 0;
+			*Next = 0;
 
-			 // write to the array
-			 LayerInfos[i].TilesetLookup[j].Id = strtol(Peek, NULL, 16);
-			 Peek = strchr(Peek, ' ') + 1;
-			 strlcpy(LayerInfos[i].TilesetLookup[j].Name, Peek, sizeof(LayerInfos[i].TilesetLookup[j].Name));
+			// write to the array
+			LayerInfos[i].TilesetLookup[j].Id = strtol(Peek, NULL, 16);
+			Peek = strchr(Peek, ' ') + 1;
+			strlcpy(LayerInfos[i].TilesetLookup[j].Name, Peek, sizeof(LayerInfos[i].TilesetLookup[j].Name));
 
-			 Peek = Next+1;
+			// detect extra parameters
+			Peek = strchr(LayerInfos[i].TilesetLookup[j].Name, ' ');
+			if(Peek) {
+				*Peek = 0;
+				Peek++;
+				// Skip to the metadata
+				while(*Peek == ' ')
+					Peek++;
+				// Triangle
+				if(*Peek == 'T') {
+					LayerInfos[i].TilesetLookup[j].Style = STYLE_RIGHT_TRIANGLE;
+					int Color = strtol(Peek+1, &Peek, 16);
+					LayerInfos[i].TilesetLookup[j].R = (Color>>16) & 255;
+					LayerInfos[i].TilesetLookup[j].G = (Color>>8)  & 255;
+					LayerInfos[i].TilesetLookup[j].B = (Color>>0)  & 255;
+
+					// Skip to the additional flags, in this case what width/height ratios are allowed
+					while(*Peek == ' ')
+						Peek++;
+					while(*Peek && *Peek != ' ') {
+						if(isdigit(*Peek))
+							LayerInfos[i].TilesetLookup[j].Var |= 1 << (*Peek - '1');
+						Peek++;
+					}
+				}				
+			}
+
+
+			Peek = Next+1;
 		}
 		LayerInfos[i].TilesetLookup[Count].Id = -1;
 		free(Buffer);
