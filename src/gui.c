@@ -355,10 +355,7 @@ void LeftClick() {
 			R->Selected = 0;
 		}
 
-		LevelRect *End = LayerInfos[CurLayer].Rects;
-		if(End != NULL)
-			while(End->Next)
-				End = End->Next;
+		LevelRect *End = LevelEndRect(CurLayer);
 		LevelRect *Copy = (LevelRect*)calloc(1, sizeof(LevelRect));
 
 		int Type = TilesetLookupIdToIndex(CurLayer, (TPCursorY<<8)|TPCursorX);
@@ -445,7 +442,96 @@ void RightClick() {
 }
 
 void TextInput(char Key) {
+	LevelRect *End, *Insert, *Scan;
+
 	switch(Key) {
+		case '-': // Background
+			Scan = LayerInfos[CurLayer].Rects;
+			if(!Scan)
+				break;
+			Scan = Scan->Next; // Skip the first
+
+			while(Scan) {
+				break;
+			}
+
+			Redraw = 1;
+			RerenderMap = 1;
+			break;
+
+		case '=': // Foreground
+			End = LevelEndRect(CurLayer);
+			Insert = End;
+			Scan = End;
+
+			while(Scan) {
+				break;
+			}
+
+			Redraw = 1;
+			RerenderMap = 1;
+			break;
+
+		case '_': // Background (all the way)
+			Scan = LayerInfos[CurLayer].Rects;
+			if(!Scan)
+				break;
+			Scan = Scan->Next; // Skip the first
+
+			while(Scan) {
+				LevelRect *After = Scan->Next;
+				if(Scan->Selected) {
+					// Remove from the old location
+					if(Scan->Prev)
+						Scan->Prev->Next = Scan->Next;
+					if(Scan->Next)
+						Scan->Next->Prev = Scan->Prev;
+
+					// Insert into the new one
+					Scan->Prev = NULL;
+					Scan->Next = LayerInfos[CurLayer].Rects;
+					LayerInfos[CurLayer].Rects->Prev = Scan;
+					LayerInfos[CurLayer].Rects = Scan;
+				}
+				Scan = After;
+			}
+
+			Redraw = 1;
+			RerenderMap = 1;
+			break;
+
+		case '+': // Foreground (all the way)
+			End = LevelEndRect(CurLayer);
+			Insert = End;
+			Scan = End;
+			if(!Scan)
+				break;
+			Scan = Scan->Prev; // Skip the last
+
+			while(Scan) {
+				LevelRect *After = Scan->Prev;
+				if(Scan->Selected) {
+					// Remove from the old location
+					if(Scan == LayerInfos[CurLayer].Rects)
+						LayerInfos[CurLayer].Rects = Scan->Next;
+					if(Scan->Prev)
+						Scan->Prev->Next = Scan->Next;
+					if(Scan->Next)
+						Scan->Next->Prev = Scan->Prev;
+
+					// Insert into the new one
+					Insert->Next = Scan;
+					Scan->Prev = Insert;
+					Scan->Next = NULL;
+					Insert = Scan;
+				}
+				Scan = After;
+			}
+
+			Redraw = 1;
+			RerenderMap = 1;
+			break;
+
 		case 'a': CameraX--; Redraw = 1; break;
 		case 's': CameraY++; Redraw = 1; break;
 		case 'd': CameraX++; Redraw = 1; break;

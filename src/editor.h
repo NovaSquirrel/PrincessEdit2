@@ -139,6 +139,7 @@ void Free_FontSet(FontSet *Fonts);
 void RenderLevelRects(int Layer);
 int IsInsideRect(int X1, int Y1, int X2, int Y2, int W, int H);
 int TilesetLookupIdToIndex(int Layer, int Id);
+LevelRect *LevelEndRect(int layer);
 
 void Undo();
 void Redo();

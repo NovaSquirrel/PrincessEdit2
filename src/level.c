@@ -375,3 +375,11 @@ void SaveLevel() {
 	fclose(Out);
 	free(Rendered);
 }
+
+LevelRect *LevelEndRect(int layer) {
+	LevelRect *End = LayerInfos[layer].Rects;
+	if(End != NULL)
+		while(End->Next)
+			End = End->Next;
+	return End;
+}
