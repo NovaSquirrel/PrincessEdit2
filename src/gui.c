@@ -444,6 +444,7 @@ void RightClick() {
 
 void TextInput(char Key) {
 	LevelRect *End, *Insert, *Scan;
+	int Temp, Temp2;
 
 	switch(Key) {
 		case '-': // Background
@@ -689,7 +690,47 @@ void TextInput(char Key) {
 			Redraw = 1;
 			RerenderMap = 1;
 			break;
+
+		case 'X':
+			Temp = LayerInfos[CurLayer].LayerWidth;
+			Temp2 = 0;
+			for(LevelRect *R = LayerInfos[CurLayer].Rects; R; R=R->Next)
+				if(R->Selected) {
+					if(R->X < Temp)
+						Temp = R->X;
+					if((R->X + R->W - 1) > Temp2)
+						Temp2 = (R->X + R->W - 1);
+				}
+			SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "%i %i", Temp, Temp2);
+			for(LevelRect *R = LayerInfos[CurLayer].Rects; R; R=R->Next)
+				if(R->Selected) {
+					R->X = Temp2-(R->X-Temp)-R->W+1;
+				}
+			Redraw = 1;
+			RerenderMap = 1;
+			break;
 		case 'Y':
+			Temp = LayerInfos[CurLayer].LayerHeight;
+			Temp2 = 0;
+			for(LevelRect *R = LayerInfos[CurLayer].Rects; R; R=R->Next)
+				if(R->Selected) {
+					if(R->Y < Temp)
+						Temp = R->Y;
+					if((R->Y + R->H - 1) > Temp2)
+						Temp2 = (R->Y + R->H - 1);
+				}
+			SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "%i %i", Temp, Temp2);
+			for(LevelRect *R = LayerInfos[CurLayer].Rects; R; R=R->Next)
+				if(R->Selected) {
+					R->Y = Temp2-(R->Y-Temp)-R->H+1;
+				}
+			Redraw = 1;
+			RerenderMap = 1;
+			break;
+
+
+
+		case 'O':
 			for(LevelRect *R = LayerInfos[CurLayer].Rects; R; R=R->Next)
 				if(R->Selected)
 					R->Flips = 0;
