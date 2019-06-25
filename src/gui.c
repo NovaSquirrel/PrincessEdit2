@@ -701,7 +701,6 @@ void TextInput(char Key) {
 					if((R->X + R->W - 1) > Temp2)
 						Temp2 = (R->X + R->W - 1);
 				}
-			SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "%i %i", Temp, Temp2);
 			for(LevelRect *R = LayerInfos[CurLayer].Rects; R; R=R->Next)
 				if(R->Selected) {
 					R->X = Temp2-(R->X-Temp)-R->W+1;
@@ -719,7 +718,6 @@ void TextInput(char Key) {
 					if((R->Y + R->H - 1) > Temp2)
 						Temp2 = (R->Y + R->H - 1);
 				}
-			SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "%i %i", Temp, Temp2);
 			for(LevelRect *R = LayerInfos[CurLayer].Rects; R; R=R->Next)
 				if(R->Selected) {
 					R->Y = Temp2-(R->Y-Temp)-R->H+1;
