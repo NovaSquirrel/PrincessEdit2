@@ -676,6 +676,7 @@ void TextInput(char Key) {
 			RerenderMap = 1;
 			break;
 
+
 		case 'x':
 			for(LevelRect *R = LayerInfos[CurLayer].Rects; R; R=R->Next)
 				if(R->Selected)
@@ -726,8 +727,6 @@ void TextInput(char Key) {
 			RerenderMap = 1;
 			break;
 
-
-
 		case 'O':
 			for(LevelRect *R = LayerInfos[CurLayer].Rects; R; R=R->Next)
 				if(R->Selected)
@@ -736,7 +735,23 @@ void TextInput(char Key) {
 			RerenderMap = 1;
 			break;
 
-
+		case 'f':
+			for(LevelRect *R = LayerInfos[CurLayer].Rects; R; R=R->Next) {
+				if(R->Selected) {
+					*TempText = 0;
+					if(R->ExtraInfo) {
+						strcpy(TempText, R->ExtraInfo);
+						free(R->ExtraInfo);
+						R->ExtraInfo = NULL;
+					}
+					InputLine("Rectangle extra info", TempText, sizeof(TempText));
+					if(*TempText)
+						R->ExtraInfo = strdup(TempText);
+					Redraw = 1;
+					break;
+				}
+			}
+			break;
 	}
 }
 

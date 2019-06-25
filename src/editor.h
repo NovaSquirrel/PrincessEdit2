@@ -141,6 +141,7 @@ void RenderLevelRects(int Layer);
 int IsInsideRect(int X1, int Y1, int X2, int Y2, int W, int H);
 int TilesetLookupIdToIndex(int Layer, int Id);
 LevelRect *LevelEndRect(int layer);
+char *InputLine(const char *Prompt, char *Buffer, int BufferSize);
 
 void Undo();
 void Redo();
