@@ -1,7 +1,7 @@
 PrincessEdit2
 =============
 
-A level editor for 'Nova the Squirrel 2' though it's generic enough that you could probably use it for other games if you want. It's designed for games whose levels are a series of rectangles of different sizes and materials.
+A level editor for _Nova the Squirrel 2_ though it's generic enough that you could probably use it for other games if you want. It's designed for games whose levels are a series of rectangles of different sizes and materials.
 
 Dependencies
 --------------
