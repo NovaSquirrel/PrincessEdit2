@@ -1,2 +1,6 @@
 0001 Sneaker
-0002 Bunny
+0002 SlowSneaker
+0003 Bunny
+0004 Spinner
+0005 SpikedHat
+0006 Checkpoint
