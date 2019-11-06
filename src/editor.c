@@ -36,6 +36,8 @@ int main(int argc, char *argv[]) {
 
 	PrefPath = SDL_GetPrefPath("Bushytail Software","PrincessEdit2");
 	BasePath = SDL_GetBasePath();
+	if(!BasePath)
+		BasePath = SDL_strdup("./");
 
 	FILE *Test = fopen(argv[1], "rb");
 	if(Test) {
@@ -45,7 +47,9 @@ int main(int argc, char *argv[]) {
 			return 0;
 		}
 	} else {
-		if(!LoadLevel("data/default.json")) {
+		char Temp[250];
+		sprintf(Temp, "%sdata/default.json", BasePath);
+		if(!LoadLevel(Temp)) {
 			SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Can't load default level");
 			return 0;
 		}
