@@ -31,8 +31,14 @@
 0208 Bridge
 0209 FloatingPlatform
 020a FloatingPlatformFallthrough
+020b LogPlatform
+020c LogPlatformSupportLeft
+020d LogPlatformSupportRight 
 0300 Stone
 0301 Sand
+0302 DoorTop
+0303 DoorExit
+0304 CeilingBarrier
 0400 LeafCube
 0401 TreeLog
 0402 SmallTreeTopLeft
@@ -46,3 +52,5 @@
 040a BlueFlowerCircle
 040b Vines
 040c BranchPlatformMiddle
+0305 DialogPoint
+0306 DoorTwoWay
