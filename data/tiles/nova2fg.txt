@@ -54,3 +54,15 @@
 040c BranchPlatformMiddle
 0305 DialogPoint
 0306 DoorTwoWay
+0500 HeartsKey
+0501 ClubsKey
+0502 DiamondsKey
+0503 SpadesKey
+0504 HeartsLock
+0505 ClubsLock
+0506 DiamondsLock
+0507 SpadesLock
+0508 HeartsLockTop
+0509 ClubsLockTop
+050a DiamondsLockTop
+050b SpadesLockTop
