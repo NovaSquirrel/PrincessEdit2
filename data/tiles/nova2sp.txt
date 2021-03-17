@@ -4,6 +4,9 @@
 0004 Spinner
 0005 LedgeWalker
 0006 Checkpoint
+0007 MovingPlatformHoriz
+0008 MovingPlatformLine
+0009 MovingPlatformPush
 0100 FireJump
 0101 FireWalk
 0102 FireFox
@@ -15,3 +18,12 @@
 0108 SmashGuy
 0109 BomberTree
 010a MirrorRabbit
+010b Boulder
+010c BubbleBuddy
+010d BubbleMoai
+010e SkateboardMoai
+010f BubbleCat
+0200 BubbleWizard
+0201 BurgerRider
+0203 EnemyGlider
+0204 EnemyLWSS
