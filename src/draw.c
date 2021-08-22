@@ -27,10 +27,11 @@ SDL_Color GridColor = {0xc0, 0xc0, 0xc0, 255};
 SDL_Surface *SDL_LoadImage(const char *FileName, int Flags) {
 	SDL_Surface* loadedSurface = IMG_Load(FileName);
 	if(loadedSurface == NULL) {
-		SDL_MessageBox(SDL_MESSAGEBOX_ERROR, "Error", window, "Unable to load image %s! SDL Error: %s", FileName, SDL_GetError());
+		if((Flags & LOAD_TEXTURE_NO_ERROR) == 0)
+			SDL_MessageBox(SDL_MESSAGEBOX_ERROR, "Error", window, "Unable to load image %s! SDL Error: %s", FileName, SDL_GetError());
 		return NULL;
 	}
-	if(Flags & 1)
+	if(Flags & LOAD_TEXTURE_COLOR_KEY)
 		SDL_SetColorKey(loadedSurface, SDL_TRUE, SDL_MapRGB(loadedSurface->format, 255, 0, 255));
 	return loadedSurface;
 }

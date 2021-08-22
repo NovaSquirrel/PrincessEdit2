@@ -22,8 +22,10 @@ cJSON *LevelJSON = NULL;
 int LevelW, LevelH, GridW, GridH, FormatVersion;
 int TileW, TileH;
 char LevelFilename[50];
-char LevelFilenameFull[260];
+char LevelFilenameFull[FILENAME_PATH_LEN];
 LayerInfo *LayerInfos = NULL;
+LoadedTileTexture *LoadedTileTextures = NULL;
+TilesetInfo *TilesetInfos = NULL;
 int NumLayers;
 
 
@@ -133,17 +135,20 @@ void Redo() {
 	RedoRect = NULL;
 }
 
+/*
 int TilesetLookupIdToIndex(int Layer, int Id) {
-	for(int i=0; LayerInfos[Layer].TilesetLookup[i].Id >= 0; i++)
-		if(LayerInfos[Layer].TilesetLookup[i].Id == Id)
+	for(int i=0; LayerInfos[Layer].Tileset->TilesetLookup[i].Id >= 0; i++)
+		if(LayerInfos[Layer].Tileset->TilesetLookup[i].Id == Id)
 			return i;
 	return -1;
 }
+*/
 
 int TilesetLookupStringToIndex(int Layer, const char *String) {
-	for(int i=0; LayerInfos[Layer].TilesetLookup[i].Id >= 0; i++)
-		if(!strcmp(LayerInfos[Layer].TilesetLookup[i].Name, String))
+	for(int i=0; LayerInfos[Layer].Tileset->TilesetLookup[i].Style != STYLE_END; i++) {
+		if(!strcmp(LayerInfos[Layer].Tileset->TilesetLookup[i].Name, String))
 			return i;
+	}
 	return -1;
 }
 
@@ -152,21 +157,59 @@ void RenderLevelRects(int Layer) {
 	memset(LayerInfos[Layer].Map, 0, sizeof(LevelTile)*LayerInfos[Layer].LayerWidth*LayerInfos[Layer].LayerHeight);
 	LevelRect *Rect = LayerInfos[Layer].Rects;
 	while(Rect) {
-		int Graphic = LayerInfos[Layer].TilesetLookup[Rect->Type].Id;
-		// Save a pointer to the tileset entry if it's a triangle or something
-		// but for the general case it's just a NULL because it's not required.
-		struct TilesetEntry *DrawInfo = NULL;
-		if(LayerInfos[Layer].TilesetLookup[Rect->Type].Style != STYLE_RECTANGLE)
-			DrawInfo = &LayerInfos[Layer].TilesetLookup[Rect->Type];
+		// Get the TilesetEntry that corresponds to this rectangle's type
+		struct TilesetEntry *DrawInfo = &LayerInfos[Layer].Tileset->TilesetLookup[Rect->Type];
+
+		int Tiles[4] = {0, 0, 0, 0};
+		switch(DrawInfo->Style) {
+			case STYLE_SINGLE:
+				Tiles[0] = DrawInfo->Single.Tile + 0x0000;
+				Tiles[1] = DrawInfo->Single.Tile + 0x0001;
+				Tiles[2] = DrawInfo->Single.Tile + 0x0100;
+				Tiles[3] = DrawInfo->Single.Tile + 0x0101;
+				break;
+			case STYLE_QUAD:
+				Tiles[0] = DrawInfo->Quad.Tiles[0];
+				Tiles[1] = DrawInfo->Quad.Tiles[1];
+				Tiles[2] = DrawInfo->Quad.Tiles[2];
+				Tiles[3] = DrawInfo->Quad.Tiles[3];
+				break;
+			case STYLE_RIGHT_TRIANGLE:
+				break;
+		}
+		if(Rect->Flips & SDL_FLIP_HORIZONTAL) {
+			int temp = Tiles[0];
+			Tiles[0] = Tiles[1] ^ 0x4000;
+			Tiles[1] = temp ^ 0x4000;
+
+			temp = Tiles[2];
+			Tiles[2] = Tiles[3] ^ 0x4000;
+			Tiles[3] = temp ^ 0x4000;
+		}
+		if(Rect->Flips & SDL_FLIP_VERTICAL) {
+			int temp = Tiles[0];
+			Tiles[0] = Tiles[2] ^ 0x8000;
+			Tiles[2] = temp ^ 0x8000;
+
+			temp = Tiles[1];
+			Tiles[1] = Tiles[3] ^ 0x8000;
+			Tiles[3] = temp ^ 0x8000;
+		}
+
+		DrawInfo = &LayerInfos[Layer].Tileset->TilesetLookup[Rect->Type];
 		for(int x=0; x<Rect->W; x++)
 			for(int y=0; y<Rect->H; y++) {
 				int RealX = Rect->X + x;
 				int RealY = Rect->Y + y;
 				if(RealX >= 0 && RealX < LayerInfos[Layer].LayerWidth && RealY >= 0 && RealY < LayerInfos[Layer].LayerHeight) {
 					int Index = RealY*LayerInfos[Layer].LayerWidth+RealX;
-					LayerInfos[Layer].Map[Index].Graphic = Graphic;
-					LayerInfos[Layer].Map[Index].Flips = Rect->Flips;
-					LayerInfos[Layer].Map[Index].Rect = Rect;
+					LayerInfos[Layer].Map[Index].Flips    = Rect->Flips;
+					LayerInfos[Layer].Map[Index].Rect     = Rect;
+					LayerInfos[Layer].Map[Index].Texture  = DrawInfo->Texture;
+					LayerInfos[Layer].Map[Index].Tiles[0] = Tiles[0];
+					LayerInfos[Layer].Map[Index].Tiles[1] = Tiles[1];
+					LayerInfos[Layer].Map[Index].Tiles[2] = Tiles[2];
+					LayerInfos[Layer].Map[Index].Tiles[3] = Tiles[3];
 					LayerInfos[Layer].Map[Index].DrawInfo = DrawInfo;
 				}
 			}
@@ -208,82 +251,141 @@ LevelRect *JSONtoLevelRect(cJSON *JSON, int Layer) {
 void FreeLayers() {
 	if(!LayerInfos) return;
 	for(int i=0;i<NumLayers;i++) {
-		SDL_DestroyTexture(LayerInfos[i].Texture);
 		free(LayerInfos[i].Map);
-		free(LayerInfos[i].TilesetLookup);
+		LevelRect *r = LayerInfos[i].Rects;
+		while(r) {
+			LevelRect *next = r->Next;
+			if(r->ExtraInfo)
+				free(r->ExtraInfo);
+			free(r);
+			r = next;
+		}
 	}
 	free(LayerInfos);
 }
 
-void LoadTilesets() {
-	for(int i=0;i<NumLayers;i++) {
+/*
+void LoadTilesetTextures() {
+	for(LoadedTileTexture *t = LoadedTileTextures; t; t=t->Next) {
+		// Try different directories??
 		char Path[260]; // make this safer later
 		sprintf(Path, "%sdata/tiles/%s.png", BasePath, LayerInfos[i].TilesetName);
 		LayerInfos[i].Texture = LoadTexture(Path, 0);
-		SDL_QueryTexture(LayerInfos[i].Texture, NULL, NULL, &LayerInfos[i].TextureW, &LayerInfos[i].TextureH);
+
+		SDL_QueryTexture(t->Texture, NULL, NULL, &t->TextureW, &t->TextureH);
 	}
 }
+*/
 
-void LoadTilesetInitial(int i) {
-	char Path[260];
-	sprintf(Path, "%sdata/tiles/%s.txt", BasePath, LayerInfos[i].TilesetName);
+SDL_Texture *TextureFromName(const char *Name) {
+	for(LoadedTileTexture *t = LoadedTileTextures; t; t=t->Next) {
+		if(!strcmp(t->Name, Name))
+			return t->Texture;
+	}
+
+	// Try and find the texture???
+	char Path[FILENAME_PATH_LEN];
+	sprintf(Path, "%sdata/tiles/%s.png", BasePath, Name);
+	SDL_Texture *texture = LoadTexture(Path, 0); //LOAD_TEXTURE_NO_ERROR);
+	if(!texture)
+		return NULL;
+
+	LoadedTileTexture *texture_info = (LoadedTileTexture*)malloc(sizeof(LoadedTileTexture));
+	strlcpy(texture_info->Name, Name, sizeof(texture_info->Name));
+	SDL_QueryTexture(texture, NULL, NULL, &texture_info->TextureW, &texture_info->TextureH);
+	texture_info->Texture = texture;
+	texture_info->Next = LoadedTileTextures;
+	LoadedTileTextures = texture_info;
+	return texture;
+}
+
+#define MAX_TILESET_SIZE 2048
+TilesetInfo *LoadTileset(const char *TilesetName) {
+	char Path[FILENAME_PATH_LEN];
+	sprintf(Path, "%sdata/tiles/%s.txt", BasePath, TilesetName);
 	char *Buffer = ReadTextFile(Path);
-	if(Buffer) {
-		int Count = 0;
-		char *Peek, *Next;
-		for(Peek = Buffer; *Peek; Peek++)
-			if(*Peek == '\n')
-				Count++;
-		LayerInfos[i].TilesetLookup = (TilesetEntry*)calloc(Count+1, sizeof(TilesetEntry));
-		Peek = Buffer;
-		for(int j=0;Peek;j++) {
-			// find the next
-			Next = strchr(Peek, '\n');
-			if(!Next) break;
-			if(Next[-1] == '\r') Next[-1] = 0;
-			*Next = 0;
 
-			// write to the array
-			LayerInfos[i].TilesetLookup[j].Id = strtol(Peek, NULL, 16);
-			Peek = strchr(Peek, ' ') + 1;
-			strlcpy(LayerInfos[i].TilesetLookup[j].Name, Peek, sizeof(LayerInfos[i].TilesetLookup[j].Name));
-
-			// detect extra parameters
-			Peek = strchr(LayerInfos[i].TilesetLookup[j].Name, ' ');
-			if(Peek) {
-				*Peek = 0;
-				Peek++;
-				// Skip to the metadata
-				while(*Peek == ' ')
-					Peek++;
-				// Triangle
-				if(*Peek == 'T') {
-					LayerInfos[i].TilesetLookup[j].Style = STYLE_RIGHT_TRIANGLE;
-					int Color = strtol(Peek+1, &Peek, 16);
-					LayerInfos[i].TilesetLookup[j].R = (Color>>16) & 255;
-					LayerInfos[i].TilesetLookup[j].G = (Color>>8)  & 255;
-					LayerInfos[i].TilesetLookup[j].B = (Color>>0)  & 255;
-
-					// Skip to the additional flags, in this case what width/height ratios are allowed
-					while(*Peek == ' ')
-						Peek++;
-					while(*Peek && *Peek != ' ') {
-						if(isdigit(*Peek))
-							LayerInfos[i].TilesetLookup[j].Var |= 1 << (*Peek - '1');
-						Peek++;
-					}
-				}				
-			}
-
-
-			Peek = Next+1;
-		}
-		LayerInfos[i].TilesetLookup[Count].Id = -1;
-		free(Buffer);
-	} else {
+	if(!Buffer) {
 		SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "%s can't load?", Path);
 		exit(0);
+		return NULL;
 	}
+
+	// Set up the tileset
+	TilesetInfo *tileset = (TilesetInfo*)calloc(1, sizeof(TilesetInfo));
+	strlcpy(tileset->Name, TilesetName, sizeof(tileset->Name));
+	tileset->TileWidth = TileW;
+	tileset->TileHeight = TileH;
+	tileset->TilesetLookup = (TilesetEntry*)calloc(MAX_TILESET_SIZE, sizeof(TilesetEntry));
+	SDL_Texture *base_texture = TextureFromName(TilesetName);
+
+	int Count = 0;
+	char *Peek, *Next; // For parsing
+
+	Peek = Buffer;
+	for(int j=0;Peek;j++,Count++) {
+		// Find the next line and terminate the line's string
+		Next = strchr(Peek, '\n');
+		if(!Next) break;
+		if(Next[-1] == '\r') Next[-1] = 0;
+		*Next = 0;
+
+		// write to the array
+		int SheetPosition = strtol(Peek, NULL, 16);
+		Peek = strchr(Peek, ' ') + 1;
+		strlcpy(tileset->TilesetLookup[j].Name, Peek, sizeof(tileset->TilesetLookup[j].Name));
+		tileset->TilesetLookup[j].Texture = base_texture;
+		tileset->TilesetLookup[j].Style = STYLE_SINGLE;
+		tileset->TilesetLookup[j].Single.Tile = SheetPosition * 2; // Shift both X and Y by 2
+
+		// detect extra parameters
+		Peek = strchr(tileset->TilesetLookup[j].Name, ' ');
+		if(Peek) {
+			*Peek = 0;
+			Peek++;
+			// Skip to the metadata
+			while(*Peek == ' ')
+				Peek++;
+			// Triangle
+			if(*Peek == 'T') {
+				tileset->TilesetLookup[j].Style = STYLE_RIGHT_TRIANGLE;
+				int Color = strtol(Peek+1, &Peek, 16);
+				tileset->TilesetLookup[j].Shape.R = (Color>>16) & 255;
+				tileset->TilesetLookup[j].Shape.G = (Color>>8)  & 255;
+				tileset->TilesetLookup[j].Shape.B = (Color>>0)  & 255;
+
+				// Skip to the additional flags, in this case what width/height ratios are allowed
+				while(*Peek == ' ')
+					Peek++;
+				while(*Peek && *Peek != ' ') {
+					if(isdigit(*Peek))
+						tileset->TilesetLookup[j].Shape.Var |= 1 << (*Peek - '1');
+					Peek++;
+				}
+			}				
+		}
+
+		// Next line
+		Peek = Next+1;
+	}
+
+	tileset->TilesetLookup[Count].Style = STYLE_END;
+	tileset->TilesetLookup = realloc(tileset->TilesetLookup, sizeof(TilesetEntry)*(Count+1));
+	free(Buffer);
+	return tileset;
+}
+
+TilesetInfo* TilesetInfoFromName(const char *Name) {
+	for(TilesetInfo *t = TilesetInfos; t; t=t->Next) {
+		if(!strcmp(t->Name, Name))
+			return t;
+	}
+	TilesetInfo *tileset = LoadTileset(Name);
+	if(tileset) {
+		tileset->Next = TilesetInfos;
+		TilesetInfos = tileset;
+	}
+	return tileset;
 }
 
 int UpdateJSONFromLevel() {
@@ -301,7 +403,7 @@ int UpdateJSONFromLevel() {
 		cJSON *Prev = NULL;
 		for(LevelRect *Rect = LayerInfos[LayerNum].Rects; Rect; Rect=Rect->Next) {
 			cJSON *New = cJSON_CreateObject();
-			cJSON_AddItemToObject(New, "Id", cJSON_CreateString(LayerInfos[LayerNum].TilesetLookup[Rect->Type].Name));
+			cJSON_AddItemToObject(New, "Id", cJSON_CreateString(LayerInfos[LayerNum].Tileset->TilesetLookup[Rect->Type].Name));
 			cJSON_AddItemToObject(New, "X", cJSON_CreateNumber(Rect->X));
 			cJSON_AddItemToObject(New, "Y", cJSON_CreateNumber(Rect->Y));
 			cJSON_AddItemToObject(New, "W", cJSON_CreateNumber(Rect->W));
@@ -344,7 +446,6 @@ int UpdateLevelFromJSON() {
 	while(Layers) {
 		strlcpy(LayerInfos[i].Name, cJSON_GetObjectItem(Layers, "Name")->valuestring, sizeof(LayerInfos[i].Name));
 		const char *Type = cJSON_GetObjectItem(Layers, "Type")->valuestring;
-		const char *Tileset = cJSON_GetObjectItem(Layers, "Tileset")->valuestring;
 		if(!strcasecmp(Type, "Rectangle"))
 			LayerInfos[i].Type = LAYER_RECTANGLE;
 		if(!strcasecmp(Type, "Sprite"))
@@ -356,12 +457,9 @@ int UpdateLevelFromJSON() {
 
 		LayerInfos[i].Map = calloc(LevelW*LevelH, sizeof(LevelTile));
 		LayerInfos[i].JSON = Layers;
-		LayerInfos[i].TileWidth = TileW;
-		LayerInfos[i].TileHeight = TileH;
 		LayerInfos[i].LayerWidth = LevelW;
 		LayerInfos[i].LayerHeight = LevelH;
-		strlcpy(LayerInfos[i].TilesetName, Tileset, sizeof(LayerInfos[i].TilesetName));
-		LoadTilesetInitial(i);
+		LayerInfos[i].Tileset = TilesetInfoFromName(cJSON_GetObjectItem(Layers, "Tileset")->valuestring);
 
 		// Parse all of the rectangles in the JSON and allocate a list
 		cJSON *JSONRect = cJSON_GetObjectItem(Layers, "Data");

@@ -71,6 +71,8 @@ void WarpForTP() {
 }
 
 void UpdateTPRect() {
+	// TODO
+	/*
 	int TPW, TPH;
 	TPTexture = LayerInfos[CurLayer].Texture;
 	SDL_QueryTexture(TPTexture, NULL, NULL, &TPW, &TPH);
@@ -82,6 +84,66 @@ void UpdateTPRect() {
 	TPRect.y = ScreenHeight/2-(TPTilesTall*(TileH+2))/2;
 	TPRect.w = TPTilesWide*(TileW+2);
 	TPRect.h = TPTilesTall*(TileH+2);
+	*/
+
+	TPTilesWide = 16;
+	TPTilesTall = 16;
+
+	TPRect.x = ScreenWidth/2-(TPTilesWide*(TileW+2))/2;
+	TPRect.y = ScreenHeight/2-(TPTilesTall*(TileH+2))/2;
+	TPRect.w = TPTilesWide*(TileW+2);
+	TPRect.h = TPTilesTall*(TileH+2);
+}
+
+
+inline SDL_RendererFlip FlipsFromTile(uint16_t tile) {
+	return ((tile&0x4000)?SDL_FLIP_HORIZONTAL:0) | ((tile&0x8000)?SDL_FLIP_VERTICAL:0);
+}
+
+inline int YFromTile(uint16_t tile) {
+	return (tile & 0x3f00) >> 8;
+}
+
+inline int XFromTile(uint16_t tile) {
+	return tile & 0x00ff;
+}
+
+void DrawTilesetEntry(TilesetEntry *tile, int drawX, int drawY, SDL_RendererFlip flip) {
+	switch(tile->Style) {
+		case STYLE_SINGLE:
+			blitf(tile->Texture, ScreenRenderer,
+				XFromTile(tile->Single.Tile)*TileW/2, YFromTile(tile->Single.Tile)*TileH/2,
+				drawX, drawY, TileW, TileH, flip ^ FlipsFromTile(tile->Single.Tile));
+			break;
+		case STYLE_QUAD:
+			blitf(tile->Texture, ScreenRenderer,
+				XFromTile(tile->Quad.Tiles[0])*TileW/2,
+				YFromTile(tile->Quad.Tiles[0])*TileH/2,
+				drawX+((flip&SDL_FLIP_HORIZONTAL)?8:0), drawY+((flip&SDL_FLIP_VERTICAL)?8:0),
+				TileW/2, TileH/2, flip ^ FlipsFromTile(tile->Quad.Tiles[0]));
+			blitf(tile->Texture, ScreenRenderer,
+				XFromTile(tile->Quad.Tiles[1])*TileW/2,
+				YFromTile(tile->Quad.Tiles[1])*TileH/2,
+				drawX+((flip&SDL_FLIP_HORIZONTAL)?0:8), drawY+((flip&SDL_FLIP_VERTICAL)?8:0),
+				TileW/2, TileH/2, flip ^ FlipsFromTile(tile->Quad.Tiles[1]));
+			blitf(tile->Texture, ScreenRenderer,
+				XFromTile(tile->Quad.Tiles[2])*TileW/2,
+				YFromTile(tile->Quad.Tiles[2])*TileH/2,
+				drawX+((flip&SDL_FLIP_HORIZONTAL)?8:0), drawY+((flip&SDL_FLIP_VERTICAL)?0:8),
+				TileW/2, TileH/2, flip ^ FlipsFromTile(tile->Quad.Tiles[2]));
+			blitf(tile->Texture, ScreenRenderer,
+				XFromTile(tile->Quad.Tiles[3])*TileW/2,
+				YFromTile(tile->Quad.Tiles[3])*TileH/2,
+				drawX+((flip&SDL_FLIP_HORIZONTAL)?0:8), drawY+((flip&SDL_FLIP_VERTICAL)?0:8),
+				TileW/2, TileH/2, flip ^ FlipsFromTile(tile->Quad.Tiles[3]));
+			break;
+		case STYLE_RIGHT_TRIANGLE:
+			blitf(tile->Texture, ScreenRenderer,
+				XFromTile(tile->Shape.Tile)*TileW/2, YFromTile(tile->Shape.Tile)*TileH/2,
+				drawX, drawY, TileW, TileH, flip ^ FlipsFromTile(tile->Shape.Tile));
+			break;
+	}
+
 }
 
 void KeyDown(SDL_Keysym key) {
@@ -117,7 +179,8 @@ void KeyDown(SDL_Keysym key) {
 			if(EditorMode == MODE_LEVEL) {
 				for(LevelRect *R = LayerInfos[CurLayer].Rects; R; R=R->Next) {
 					if(R->Selected) {
-						int Type = LayerInfos[CurLayer].TilesetLookup[R->Type].Id;
+						// TODO
+						int Type = 0; //LayerInfos[CurLayer].Tileset->TilesetLookup[R->Type].Id;
 						TPCursorX = Type & 0xff;
 						TPCursorY = Type >> 8;
 					}
@@ -359,7 +422,7 @@ void LeftClick() {
 		LevelRect *End = LevelEndRect(CurLayer);
 		LevelRect *Copy = (LevelRect*)calloc(1, sizeof(LevelRect));
 
-		int Type = TilesetLookupIdToIndex(CurLayer, (TPCursorY<<8)|TPCursorX);
+		int Type = -1; //TilesetLookupIdToIndex(CurLayer, (TPCursorY<<8)|TPCursorX); TODO
 		if(Type == - 1)
 			return;
 
@@ -813,21 +876,20 @@ void DrawGUI() {
 			sprintf(Temp2, "<%ix%i> ", SelectedRect->W, SelectedRect->H);
 
 		// Check for slope stuff
-		TilesetEntry *DrawInfo = &LayerInfos[CurLayer].TilesetLookup[SelectedRect->Type];
+		TilesetEntry *DrawInfo = &LayerInfos[CurLayer].Tileset->TilesetLookup[SelectedRect->Type];
 		if(DrawInfo->Style == STYLE_RIGHT_TRIANGLE) {
 			double Ratio = (double)SelectedRect->W / (double)SelectedRect->H;
 			sprintf(TempText, "%.3f", Ratio);
 
 			if(floorf(Ratio) == Ratio && Ratio) { // Integer ratio
-				if(DrawInfo->Var & (1 << ((int)Ratio-1)))
+				if(DrawInfo->Shape.Var & (1 << ((int)Ratio-1)))
 					strcat(TempText, " \xE2\x9C\x93 "); // Checkmark
 			}
 			strcat(Temp2, TempText);
 		}
 
-		int Graphic = LayerInfos[CurLayer].TilesetLookup[SelectedRect->Type].Id;
-		blitf(LayerInfos[CurLayer].Texture, ScreenRenderer, (Graphic&255)*TileW, (Graphic>>8)*TileH, 5, 5+MainFont.Height*1, TileW, TileH, SelectedRect->Flips);
-		RenderFormatText(ScreenRenderer, &MainFont, 5+TileW+5, 5+MainFont.Height*1, 0, "%s %s%s", LayerInfos[CurLayer].TilesetLookup[SelectedRect->Type].Name, Temp2, SelectedRect->ExtraInfo?SelectedRect->ExtraInfo:"");
+		DrawTilesetEntry(&LayerInfos[CurLayer].Tileset->TilesetLookup[SelectedRect->Type], 5, 5+MainFont.Height*1, SelectedRect->Flips);
+		RenderFormatText(ScreenRenderer, &MainFont, 5+TileW+5, 5+MainFont.Height*1, 0, "%s %s%s", LayerInfos[CurLayer].Tileset->TilesetLookup[SelectedRect->Type].Name, Temp2, SelectedRect->ExtraInfo?SelectedRect->ExtraInfo:"");
 	} else if(SelectedCount > 1) {
 		RenderFormatText(ScreenRenderer, &MainFont, 5+TileW+5, 5+MainFont.Height*1, 0, "(%i selected)", SelectedCount);
 	}
@@ -849,18 +911,33 @@ void DrawGUI() {
 					LevelTile Tile = LayerInfos[L].Map[RealY*LayerInfos[L].LayerWidth+RealX];
 
 					// Is there a tile here?
-					if(Tile.Graphic != -1) {
-						if(!Tile.DrawInfo) { // Regular rectangles
-							// Draw with flips
-							if(Tile.Flips == 0)
-								blit(LayerInfos[L].Texture, ScreenRenderer, (Tile.Graphic&255)*TileW, (Tile.Graphic>>8)*TileH, MapViewX+x*TileW, MapViewY+y*TileH, TileW, TileH);
-							else
-								blitf(LayerInfos[L].Texture, ScreenRenderer, (Tile.Graphic&255)*TileW, (Tile.Graphic>>8)*TileH, MapViewX+x*TileW, MapViewY+y*TileH, TileW, TileH, Tile.Flips);
+					if(Tile.DrawInfo != NULL) {
+						if(Tile.DrawInfo->Style != STYLE_RIGHT_TRIANGLE) { // Regular rectangles
+							blitf(Tile.Texture, ScreenRenderer,
+								XFromTile(Tile.Tiles[0])*TileW/2,
+								YFromTile(Tile.Tiles[0])*TileH/2,
+								MapViewX+x*TileW, MapViewY+y*TileH,
+								TileW/2, TileH/2, FlipsFromTile(Tile.Tiles[0]));
+							blitf(Tile.Texture, ScreenRenderer,
+								XFromTile(Tile.Tiles[1])*TileW/2,
+								YFromTile(Tile.Tiles[1])*TileH/2,
+								MapViewX+x*TileW+TileW/2, MapViewY+y*TileH,
+								TileW/2, TileH/2, FlipsFromTile(Tile.Tiles[1]));
+							blitf(Tile.Texture, ScreenRenderer,
+								XFromTile(Tile.Tiles[2])*TileW/2,
+								YFromTile(Tile.Tiles[2])*TileH/2,
+								MapViewX+x*TileW, MapViewY+y*TileH+TileH/2,
+								TileW/2, TileH/2, FlipsFromTile(Tile.Tiles[2]));
+							blitf(Tile.Texture, ScreenRenderer,
+								XFromTile(Tile.Tiles[3])*TileW/2,
+								YFromTile(Tile.Tiles[3])*TileH/2,
+								MapViewX+x*TileW+TileW/2, MapViewY+y*TileH+TileH/2,
+								TileW/2, TileH/2, FlipsFromTile(Tile.Tiles[3]));
 						} else { // Nonstandard shapes
 							if(Tile.DrawInfo->Style == STYLE_RIGHT_TRIANGLE) {
 								SDL_Rect Clip = {MapViewX+x*TileW, MapViewY+y*TileH, TileW, TileH};
 								SDL_RenderSetClipRect(ScreenRenderer, &Clip);
-								SDL_SetRenderDrawColor(ScreenRenderer, Tile.DrawInfo->R, Tile.DrawInfo->G, Tile.DrawInfo->B, 255);
+								SDL_SetRenderDrawColor(ScreenRenderer, Tile.DrawInfo->Shape.R, Tile.DrawInfo->Shape.G, Tile.DrawInfo->Shape.B, 255);
 
 								LevelRect *R = Tile.Rect;
 								int RectBaseX = MapViewX + (R->X * TileW) - (CameraX * TileW);
@@ -995,14 +1072,14 @@ void DrawGUI() {
 	SDL_RenderPresent(ScreenRenderer);
 }
 
-void run_gui() {
+void run_gui(const char *filename) {
 	// .-----------------------------------------------------------------------
 	// | INITIALIZE EVERYTHING
 	// '-----------------------------------------------------------------------
 	window = SDL_CreateWindow("Princess Edit 2", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, ScreenWidth, ScreenHeight, SDL_WINDOW_SHOWN | SDL_WINDOW_RESIZABLE);
 	if(!window) {
-		 SDL_MessageBox(SDL_MESSAGEBOX_ERROR, "Error", NULL, "Window could not be created! SDL_Error: %s", SDL_GetError());
-		 return;
+		SDL_MessageBox(SDL_MESSAGEBOX_ERROR, "Error", NULL, "Window could not be created! SDL_Error: %s", SDL_GetError());
+		return;
 	}
 	if(!(IMG_Init(IMG_INIT_PNG) & IMG_INIT_PNG)){
 		SDL_MessageBox(SDL_MESSAGEBOX_ERROR, "Error", NULL, "SDL_image could not initialize! SDL_image Error: %s", IMG_GetError());
@@ -1030,12 +1107,33 @@ void run_gui() {
 	SystemCursors[SYSCURSOR_DISABLE] = SDL_CreateSystemCursor(SDL_SYSTEM_CURSOR_NO);
 
 	if (!Load_FontSet(&MainFont, 14, "data/font/font.ttf", "data/font/fontb.ttf", "data/font/fonti.ttf", "data/font/fontbi.ttf"))
-		return;
+		goto exit;
 	if (!Load_FontSet(&TinyFont, 10, "data/font/font.ttf", "data/font/fontb.ttf", "data/font/fonti.ttf", "data/font/fontbi.ttf"))
-		return;
+		goto exit;
 	if (!Load_FontSet(&VeryTinyFont, 8, "data/font/font.ttf", "data/font/fontb.ttf", "data/font/fonti.ttf", "data/font/fontbi.ttf"))
-		return;
-	LoadTilesets();
+		goto exit;
+
+	// .-----------------------------------------------------------------------
+	// | LOAD THE LEVEL
+	// '-----------------------------------------------------------------------
+
+	FILE *Test = fopen(filename, "rb");
+	if(Test) {
+		fclose(Test);
+		if(!LoadLevel(filename)) {
+			SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Can't load %s", filename);
+			return;
+		}
+	} else {
+		char Temp[250];
+		sprintf(Temp, "%sdata/default.json", BasePath);
+		if(!LoadLevel(Temp)) {
+			SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Can't load default level");
+			return;
+		}
+		strlcpy(LevelFilename, FilenameOnly(filename), sizeof(LevelFilename));
+		strlcpy(LevelFilenameFull, filename, sizeof(LevelFilenameFull));
+	}
 
 	// .-----------------------------------------------------------------------
 	// | EVENT LOOP
@@ -1083,11 +1181,10 @@ void run_gui() {
 		SDL_Delay(17);
 		retraces++;
 	}
+exit:
 	for(int i=0;i<SYSCURSOR_MAX;i++)
 		SDL_FreeCursor(SystemCursors[i]);
 	Free_FontSet(&MainFont);
 	Free_FontSet(&TinyFont);
 	Free_FontSet(&VeryTinyFont);
-
-	SDL_Quit();
 }
