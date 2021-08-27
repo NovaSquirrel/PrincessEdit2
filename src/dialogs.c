@@ -76,7 +76,7 @@ char *InputLine(const char *Prompt, char *Buffer, int BufferSize) {
 			SDL_RenderFillRect(ScreenRenderer, &Rect);
 
 			// Add text
-			RenderSimpleText(ScreenRenderer, &MainFont, Rect.x+4, Rect.y, 1, Prompt);
+			RenderSimpleText(ScreenRenderer, &MainFont, Rect.x+4, Rect.y, 0, Prompt);
 			RenderSimpleText(ScreenRenderer, &MainFont, Rect.x+4, Rect.y+Height, 0, Buffer);
 
 			// Add cursor

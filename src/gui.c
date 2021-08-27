@@ -54,6 +54,7 @@ SDL_Rect TPBlocksRect = {0, 0, 0, 0};
 #define TP_HOTKEYS_HEIGHT 18
 #define TP_BLOCKS_PER_ROW 20
 int TPRows = 16;
+char TPSearchText[64] = "";
 
 int TPBlocksInCategory[MAX_TILESET_SIZE];
 int TPBlocksInCategoryCount;
@@ -88,6 +89,18 @@ void WarpForTP() {
 		SDL_WarpMouseInWindow(window, SavedTPX, SavedTPY);
 	else
 		SDL_WarpMouseInWindow(window, TPRect.x+TPRect.w/2, TPRect.y+TPRect.h/2);
+}
+
+int MatchesSearch(const char *name) {
+	if(!TPSearchText[0])
+		return 1;
+	char lower[strlen(name)+1];
+	for(int i=0; name[i]; i++) {
+		lower[i] = tolower(name[i]);
+	}
+	lower[strlen(name)] = 0;
+
+	return strstr(lower, TPSearchText) != NULL;
 }
 
 void UpdateTPRect() {
@@ -132,9 +145,10 @@ void UpdateTPRect() {
 	int last_category_index = NUM_SPECIAL_CATEGORIES + LayerInfos[CurLayer].Tileset->CategoryCount - 1;
 
 	if(LayerInfos[CurLayer].CurrentCategory == 0) { // Everything
-		TPBlocksInCategoryCount = LayerInfos[CurLayer].Tileset->TileCount;
-		for(int i=0; i<TPBlocksInCategoryCount; i++)
-			TPBlocksInCategory[i] = i;
+		TPBlocksInCategoryCount = 0;
+		for(int i=0; i<LayerInfos[CurLayer].Tileset->TileCount; i++)
+			if(MatchesSearch(LayerInfos[CurLayer].Tileset->TilesetLookup[i].Name))
+				TPBlocksInCategory[TPBlocksInCategoryCount++] = i;
 	} else if(LayerInfos[CurLayer].CurrentCategory == last_category_index) { // Recent
 		TPBlocksInCategoryCount = 0;
 	} else if(LayerInfos[CurLayer].CurrentCategory == last_category_index-1) { // Favorites
@@ -143,7 +157,8 @@ void UpdateTPRect() {
 		TPBlocksInCategoryCount = 0;
 		int category_mask = 1 << (LayerInfos[CurLayer].CurrentCategory - 1); // Skip the "everything" category
 		for(int i=0; i<LayerInfos[CurLayer].Tileset->TileCount; i++) {
-			if(LayerInfos[CurLayer].Tileset->TilesetLookup[i].Categories & category_mask) {
+			if((LayerInfos[CurLayer].Tileset->TilesetLookup[i].Categories & category_mask)
+				&& MatchesSearch(LayerInfos[CurLayer].Tileset->TilesetLookup[i].Name)) {
 				TPBlocksInCategory[TPBlocksInCategoryCount++] = i;
 			}
 		}
@@ -949,20 +964,27 @@ void TextInput(char Key) {
 			break;
 
 		case 'f':
-			for(LevelRect *R = LayerInfos[CurLayer].Rects; R; R=R->Next) {
-				if(R->Selected) {
-					*TempText = 0;
-					if(R->ExtraInfo) {
-						strcpy(TempText, R->ExtraInfo);
-						free(R->ExtraInfo);
-						R->ExtraInfo = NULL;
+			if(EditorMode == MODE_LEVEL) {
+				for(LevelRect *R = LayerInfos[CurLayer].Rects; R; R=R->Next) {
+					if(R->Selected) {
+						*TempText = 0;
+						if(R->ExtraInfo) {
+							strcpy(TempText, R->ExtraInfo);
+							free(R->ExtraInfo);
+							R->ExtraInfo = NULL;
+						}
+						InputLine("Rectangle extra info", TempText, sizeof(TempText));
+						if(*TempText)
+							R->ExtraInfo = strdup(TempText);
+						Redraw = 1;
+						break;
 					}
-					InputLine("Rectangle extra info", TempText, sizeof(TempText));
-					if(*TempText)
-						R->ExtraInfo = strdup(TempText);
-					Redraw = 1;
-					break;
 				}
+			} else if(EditorMode == MODE_PICKER) {
+				TPSearchText[0] = 0;
+				InputLine("Search for...", TPSearchText, sizeof(TPSearchText));
+				UpdateTPRect();
+				Redraw = 1;
 			}
 			break;
 	}
@@ -1277,6 +1299,10 @@ void DrawGUI() {
 			category_name = "Starred tiles";
 		} else {
 			category_name = LayerInfos[CurLayer].Tileset->Categories[LayerInfos[CurLayer].CurrentCategory - 1];
+		}
+		if(TPSearchText[0]) {
+			sprintf(TempText, "%s (%s)", category_name, TPSearchText);
+			category_name = TempText;
 		}
 		RenderSimpleText(ScreenRenderer, &MainFont, TPRect.x, TPCategoryNameRect.y+2, 0, category_name);
 
