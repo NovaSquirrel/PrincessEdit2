@@ -16,6 +16,7 @@
 #include "cJSON.h"
 
 #define FILENAME_PATH_LEN 260
+#define MAX_TILESET_SIZE 2048
 
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -81,11 +82,16 @@ typedef struct TilesetEntry { // convert to some sort of hash table later
 	};
 } TilesetEntry;
 
+#define NUM_SPECIAL_CATEGORIES 3
+#define MAX_CATEGORIES 32
 typedef struct TilesetInfo {
 	char Name[32];
 	TilesetEntry *TilesetLookup;
 	unsigned int TileWidth, TileHeight;
-	char Categories[32][20]; // Names of each category
+	char Categories[MAX_CATEGORIES][20]; // Names of each category
+	uint16_t CategoryIcons[MAX_CATEGORIES];
+	size_t CategoryCount;
+	size_t TileCount;
 	struct TilesetInfo *Next;
 } TilesetInfo;
 
@@ -99,6 +105,7 @@ typedef struct LayerInfo {
 	LevelRect *Rects; // The actual level data
 	cJSON *JSON;      // JSON node representing the layer
 	char LayerHidden;
+	char CurrentCategory;
 } LayerInfo;
 
 enum SysCursorId {
@@ -139,11 +146,15 @@ extern TilesetInfo *TilesetInfos;
 extern LoadedTileTexture *LoadedTileTextures;
 extern int NumLayers;
 
+#define TEXTURE_SEARCH_PATH_COUNT 20
+extern char TextureSearchPaths[TEXTURE_SEARCH_PATH_COUNT][FILENAME_PATH_LEN];
+
 extern SDL_Color FGColor;
 extern SDL_Color BGColor;
 extern SDL_Color SelectColor;
 extern SDL_Color AvailableColor;
 extern SDL_Color GridColor;
+extern SDL_Color WhiteColor;
 
 void SDL_MessageBox(int Type, const char *Title, SDL_Window *Window, const char *fmt, ...);
 void strlcpy(char *Destination, const char *Source, int MaxLength);
@@ -152,8 +163,8 @@ SDL_Surface *SDL_LoadImage(const char *FileName, int Flags);
 #define LOAD_TEXTURE_COLOR_KEY 1
 #define LOAD_TEXTURE_NO_ERROR 2
 SDL_Texture *LoadTexture(const char *FileName, int Flags);
-void rectfill(SDL_Renderer *Bmp, int X1, int Y1, int X2, int Y2);
-void rect(SDL_Renderer *Bmp, int X1, int Y1, int X2, int Y2);
+void rectfill(SDL_Renderer *Bmp, int X1, int Y1, int W, int H);
+void rect(SDL_Renderer *Bmp, int X1, int Y1, int W, int H);
 void sblit(SDL_Surface* SrcBmp, SDL_Surface* DstBmp, int SourceX, int SourceY, int DestX, int DestY, int Width, int Height);
 void blit(SDL_Texture* SrcBmp, SDL_Renderer* DstBmp, int SourceX, int SourceY, int DestX, int DestY, int Width, int Height);
 void blitf(SDL_Texture* SrcBmp, SDL_Renderer* DstBmp, int SourceX, int SourceY, int DestX, int DestY, int Width, int Height, SDL_RendererFlip Flip);
@@ -171,6 +182,7 @@ void cJSON_IntValueSet(cJSON *JSON, const char *Var, int Value);
 int LoadLevel(const char *Path);
 void SaveLevel();
 void LoadTilesetTextures();
+#define SIMPLE_TEXT_ON_WHITE 1
 void RenderSimpleText(SDL_Renderer *Renderer, FontSet *Font, int X, int Y, int Flags, const char *Text);
 void RenderFormatText(SDL_Renderer *Renderer, FontSet *Font, int X, int Y, int Flags, const char *Text, ...);
 int Load_FontSet(FontSet *Fonts, int Size, const char *Font1, const char *Font2, const char *Font3, const char *Font4);

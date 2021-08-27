@@ -39,6 +39,8 @@ int main(int argc, char *argv[]) {
 	BasePath = SDL_GetBasePath();
 	if(!BasePath)
 		BasePath = SDL_strdup("./");
+	sprintf(TextureSearchPaths[0], "%sdata/tiles/", BasePath);
+
 	// Level file path is pretty much the "current working directory"
 	strcpy(LevelDirectory, argv[1]);
 	char *Last = strrchr(LevelDirectory, '/');

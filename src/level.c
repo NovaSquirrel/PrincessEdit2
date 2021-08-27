@@ -264,18 +264,8 @@ void FreeLayers() {
 	free(LayerInfos);
 }
 
-/*
-void LoadTilesetTextures() {
-	for(LoadedTileTexture *t = LoadedTileTextures; t; t=t->Next) {
-		// Try different directories??
-		char Path[260]; // make this safer later
-		sprintf(Path, "%sdata/tiles/%s.png", BasePath, LayerInfos[i].TilesetName);
-		LayerInfos[i].Texture = LoadTexture(Path, 0);
-
-		SDL_QueryTexture(t->Texture, NULL, NULL, &t->TextureW, &t->TextureH);
-	}
-}
-*/
+#define TEXTURE_SEARCH_PATH_COUNT 20
+char TextureSearchPaths[TEXTURE_SEARCH_PATH_COUNT][FILENAME_PATH_LEN] = {{0}};
 
 SDL_Texture *TextureFromName(const char *Name) {
 	for(LoadedTileTexture *t = LoadedTileTextures; t; t=t->Next) {
@@ -285,10 +275,19 @@ SDL_Texture *TextureFromName(const char *Name) {
 
 	// Try and find the texture???
 	char Path[FILENAME_PATH_LEN];
-	sprintf(Path, "%sdata/tiles/%s.png", BasePath, Name);
-	SDL_Texture *texture = LoadTexture(Path, 0); //LOAD_TEXTURE_NO_ERROR);
-	if(!texture)
-		return NULL;
+	SDL_Texture *texture = NULL;
+	for(int i=0; i<TEXTURE_SEARCH_PATH_COUNT; i++) {
+		if(!TextureSearchPaths[i][0])
+			break;
+		sprintf(Path, "%s%s.png", TextureSearchPaths[i], Name);
+		texture = LoadTexture(Path, LOAD_TEXTURE_NO_ERROR);
+		if(texture)
+			break;
+	}
+	if(!texture) {
+		SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Can't find texture \"%s\"", Name);
+		exit(0);
+	}
 
 	LoadedTileTexture *texture_info = (LoadedTileTexture*)malloc(sizeof(LoadedTileTexture));
 	strlcpy(texture_info->Name, Name, sizeof(texture_info->Name));
@@ -299,16 +298,175 @@ SDL_Texture *TextureFromName(const char *Name) {
 	return texture;
 }
 
-#define MAX_TILESET_SIZE 2048
+int StartsWith(char *string, const char *starts_with, char **write_to) {
+	int length = strlen(starts_with);
+	if(!memcmp(string, starts_with, length)) {
+		if(write_to) {
+			*write_to = string + length;
+		}
+		return 1;
+	}
+	return 0;
+}
+
+uint32_t ParseCategoryString(TilesetInfo *tileset, char *string) {
+	int categories = 0;
+
+	char *s = strtok (string, ",");
+	while (s != NULL) {
+		// Try to look up the name first
+		int found = 0;
+		for(int i=0; i<MAX_CATEGORIES; i++) {
+			if(!strcmp(tileset->Categories[i], s)) {
+				categories |= 1 << i;
+				found = 1;
+				break;
+			}
+		}
+		// Find a free slot to create it
+		if(!found) {
+			int i = tileset->CategoryCount++;
+			strlcpy(tileset->Categories[i], s, sizeof(tileset->Categories[i]));
+			categories |= 1 << i;
+		}
+
+		s = strtok(NULL, ",");
+	}
+
+	return categories;
+}
+
+int ParseNumber(const char *Number) {
+	if(Number[0] == '$')
+		return strtol(Number+1, NULL, 16);
+	return strtol(Number, NULL, 10);
+}
+
+uint16_t ParseNova2Tile(const char *Tile) {
+	// Syntax: [base:]x[,y][_][h][v]
+	while(*Tile == ' ')
+		Tile++;
+	// TODO: Properly handle constructs like 0:0
+	if(!memcmp(Tile, "0:0", 3))
+		return 0xffff; // Make it invisible at least
+
+	int flips = 0;
+	char *end = strrchr(Tile, 0);
+	if(end[-1] == 'v') {
+		flips |= 0x8000;
+		end--;
+	}
+	if(end[-1] == 'h') {
+		flips |= 0x4000;
+		end--;
+	}
+
+	// Ignore the base
+	const char *number_start = strchr(Tile, ':');
+	if(!number_start)
+		number_start = Tile;
+	else
+		number_start++;
+
+	// Read tile position
+	int x = ParseNumber(number_start);
+	int y = 0;
+	const char *comma = strchr(number_start, ',');
+	if(comma)
+		y = ParseNumber(comma+1);
+
+	y += (x / 16) * 16;
+	x = x % 16;
+	return flips | x | (y << 8);
+}
+
+void ImportNova2Tileset(TilesetInfo *Tileset, int *Count, const char *TilesetName) {
+	char Path[FILENAME_PATH_LEN];
+	sprintf(Path, "%s%s", LevelDirectory, TilesetName);
+	char *Buffer = ReadTextFile(Path);
+	if(!Buffer) {
+		sprintf(Path, "%sdata/tiles/%s", BasePath, TilesetName);
+		Buffer = ReadTextFile(Path);
+
+		if(!Buffer) {
+			SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "%s can't load?", Path);
+			exit(0);
+			return;
+		}
+	}
+
+	char *Peek = Buffer, *Next; // For parsing
+	SDL_Texture *texture = NULL;
+	int category = 0;
+	int defined_anything = 0;
+
+	uint16_t this_tile_index = 0;
+
+	while(Peek) {
+		// Find the next line and terminate the current line's string
+		Next = strchr(Peek, '\n');
+		if(!Next) break;
+		if(Next[-1] == '\r') Next[-1] = 0;
+		*Next = 0;
+
+		// TODO
+		if(*Peek == '#') { // Comment
+			Peek = Next+1;
+			continue;
+		} else if(*Peek == '+') {
+			if(defined_anything)
+				(*Count)++;
+			strlcpy(Tileset->TilesetLookup[*Count].Name, Peek+1, sizeof(Tileset->TilesetLookup[*Count].Name));
+			Tileset->TilesetLookup[*Count].Categories = category;
+			Tileset->TilesetLookup[*Count].Texture = texture;
+			defined_anything = 1;
+			this_tile_index = 0;
+		} else if(Peek[0] == 't' && Peek[1] == ' ') {
+			// TODO: protect against buffer overflow?
+			Tileset->TilesetLookup[*Count].Style = STYLE_QUAD;
+			char *space = strchr(Peek+2, ' ');
+			if(space)
+				*space = 0;
+			Tileset->TilesetLookup[*Count].Quad.Tiles[this_tile_index++] = ParseNova2Tile(Peek+2);
+			if(space) {
+				Tileset->TilesetLookup[*Count].Quad.Tiles[this_tile_index++] = ParseNova2Tile(space+1);
+			}
+		} else if(Peek[0] == 'q' && Peek[1] == ' ') {
+			Tileset->TilesetLookup[*Count].Style = STYLE_SINGLE;
+			Tileset->TilesetLookup[*Count].Single.Tile = ParseNova2Tile(Peek+2);
+		} else if(StartsWith(Peek, "tileset ", &Peek)) {
+			texture = TextureFromName(Peek);
+		} else if(StartsWith(Peek, "editor_category ", &Peek)) {
+			category = ParseCategoryString(Tileset, Peek);
+		} else if(StartsWith(Peek, "editor_uncategorized", &Peek)) {
+			category = 0;
+		} else if(StartsWith(Peek, "editor_hide", &Peek)) {
+			(*Count)--;
+		}
+
+		// Next line
+		Peek = Next+1;
+	}
+	if(defined_anything)
+		(*Count)++;
+
+	free(Buffer);
+}
+
 TilesetInfo *LoadTileset(const char *TilesetName) {
 	char Path[FILENAME_PATH_LEN];
-	sprintf(Path, "%sdata/tiles/%s.txt", BasePath, TilesetName);
+	sprintf(Path, "%s%s.txt", LevelDirectory, TilesetName);
 	char *Buffer = ReadTextFile(Path);
 
 	if(!Buffer) {
-		SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "%s can't load?", Path);
-		exit(0);
-		return NULL;
+		sprintf(Path, "%sdata/tiles/%s.txt", BasePath, TilesetName);
+		Buffer = ReadTextFile(Path);
+
+		if(!Buffer) {
+			SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "%s can't load?", Path);
+			exit(0);
+			return NULL;
+		}
 	}
 
 	// Set up the tileset
@@ -322,24 +480,148 @@ TilesetInfo *LoadTileset(const char *TilesetName) {
 	int Count = 0;
 	char *Peek, *Next; // For parsing
 
+	// Parsing state
+	int category = 0;
+	SDL_Texture *current_texture = base_texture;
+
 	Peek = Buffer;
-	for(int j=0;Peek;j++,Count++) {
-		// Find the next line and terminate the line's string
+	while(Peek) {
+		// Find the next line and terminate the current line's string
 		Next = strchr(Peek, '\n');
 		if(!Next) break;
 		if(Next[-1] == '\r') Next[-1] = 0;
 		*Next = 0;
 
-		// write to the array
-		int SheetPosition = strtol(Peek, NULL, 16);
+		if(strlen(Peek) <= 1 || *Peek == '#') { // Comment
+			Peek = Next+1;
+			continue;
+		} else if(StartsWith(Peek, "category ", &Peek)) { // Mark upcoming tiles under a list of categories
+			category = ParseCategoryString(tileset, Peek);
+			Peek = Next+1;
+			continue;
+		} else if(StartsWith(Peek, "uncategorized", NULL)) {
+			category = 0;
+			Peek = Next+1;
+			continue;
+		} else if(StartsWith(Peek, "texture ", &Peek)) {
+			current_texture = TextureFromName(Peek);
+			Peek = Next+1;
+			continue;
+		} else if(StartsWith(Peek, "default_texture", NULL)) {
+			current_texture = base_texture;
+			Peek = Next+1;
+			continue;
+		} else if(StartsWith(Peek, "look_like ", &Peek)) {
+			char *equals = strchr(Peek, '=');
+			if(equals) {
+				*equals = 0;				
+				int tile1 = -1, tile2 = -1;
+				for(int i=0; i<Count; i++) {
+					if(!strcmp(tileset->TilesetLookup[i].Name, Peek)) {
+						tile1 = i;
+						break;
+					}
+				}
+				for(int i=0; i<Count; i++) {
+					if(!strcmp(tileset->TilesetLookup[i].Name, equals+1)) {
+						tile2 = i;
+						break;
+					}
+				}
+				if(tile1 != -1 && tile2 != -1) {
+					tileset->TilesetLookup[tile1].Style = tileset->TilesetLookup[tile2].Style;
+					tileset->TilesetLookup[tile1].Texture = tileset->TilesetLookup[tile2].Texture;
+					if(tileset->TilesetLookup[tile1].Style == STYLE_SINGLE) {
+						tileset->TilesetLookup[tile1].Single = tileset->TilesetLookup[tile2].Single;
+					} else if(tileset->TilesetLookup[tile1].Style == STYLE_QUAD) {
+						tileset->TilesetLookup[tile1].Quad = tileset->TilesetLookup[tile2].Quad;
+
+					}
+				} else {
+					SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Can't find %s and/or %s for a look_like command", Peek, equals+1);
+					exit(0);
+					return NULL;
+				}
+			}
+			Peek = Next+1;
+			continue;
+		} else if(StartsWith(Peek, "import_nova2 ", &Peek)) {
+			ImportNova2Tileset(tileset, &Count, Peek);
+			Peek = Next+1;
+			continue;
+		} else if(StartsWith(Peek, "texture_path ", &Peek)) {
+			for(int i=0; i<TEXTURE_SEARCH_PATH_COUNT; i++) {
+				if(!TextureSearchPaths[i][0]) {
+					sprintf(TextureSearchPaths[i], "%s%s", LevelDirectory, Peek);
+					// Make sure it ends in a slash
+					char *Last = strrchr(TextureSearchPaths[i], 0);
+					if(Last[-1] != '/' && Last[-1] != '\\') {
+						Last[0] = '/';
+						Last[1] = 0;
+					}
+					break;
+				}
+			}
+			Peek = Next+1;
+			continue;
+		} else if(StartsWith(Peek, "category_icon ", &Peek)) {
+			char *equals = strchr(Peek, '=');
+			if(equals) {
+				*equals = 0;				
+				int cat = -1, tile = -1;
+				for(int i=0; i<tileset->CategoryCount; i++) {
+					if(!strcmp(tileset->Categories[i], Peek)) {
+						cat = i;
+						break;
+					}
+				}
+				for(int i=0; i<Count; i++) {
+					if(!strcmp(tileset->TilesetLookup[i].Name, equals+1)) {
+						tile = i;
+						break;
+					}
+				}
+				if(cat != -1 && tile != -1) {
+					tileset->CategoryIcons[cat] = tile;
+				} else {
+					SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Can't find %s and/or %s for a category_icon command", Peek, equals+1);
+					exit(0);
+					return NULL;
+				}
+			}
+			Peek = Next+1;
+			continue;
+		}
+
+		// Assume this is a tile, and write it the array
+		char *after = Peek;
+		int SheetPosition = strtol(Peek, &after, 16);
+		if(after == Peek) {
+			SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Can't understand tileset line: %s", Peek);
+			exit(0);
+			return NULL;
+		}
 		Peek = strchr(Peek, ' ') + 1;
-		strlcpy(tileset->TilesetLookup[j].Name, Peek, sizeof(tileset->TilesetLookup[j].Name));
-		tileset->TilesetLookup[j].Texture = base_texture;
-		tileset->TilesetLookup[j].Style = STYLE_SINGLE;
-		tileset->TilesetLookup[j].Single.Tile = SheetPosition * 2; // Shift both X and Y by 2
+
+		// If the name is already defined, overwrite the old one's appearance
+		int insert_at = Count;
+		int added_one = 1;
+		for(int i=0; i<Count; i++) {
+			if(!strcmp(tileset->TilesetLookup[i].Name, Peek)) {
+				insert_at = i;
+				added_one = 0;
+				break;
+			}
+		}
+		if(added_one)
+			strlcpy(tileset->TilesetLookup[insert_at].Name, Peek, sizeof(tileset->TilesetLookup[insert_at].Name));
+		tileset->TilesetLookup[insert_at].Categories |= category;
+		tileset->TilesetLookup[insert_at].Texture = current_texture;
+		tileset->TilesetLookup[insert_at].Style = STYLE_SINGLE;
+		tileset->TilesetLookup[insert_at].Single.Tile = SheetPosition * 2; // Shift both X and Y by 2
 
 		// detect extra parameters
-		Peek = strchr(tileset->TilesetLookup[j].Name, ' ');
+		Peek = strchr(tileset->TilesetLookup[insert_at].Name, ' ');
 		if(Peek) {
 			*Peek = 0;
 			Peek++;
@@ -348,27 +630,30 @@ TilesetInfo *LoadTileset(const char *TilesetName) {
 				Peek++;
 			// Triangle
 			if(*Peek == 'T') {
-				tileset->TilesetLookup[j].Style = STYLE_RIGHT_TRIANGLE;
+				tileset->TilesetLookup[insert_at].Style = STYLE_RIGHT_TRIANGLE;
 				int Color = strtol(Peek+1, &Peek, 16);
-				tileset->TilesetLookup[j].Shape.R = (Color>>16) & 255;
-				tileset->TilesetLookup[j].Shape.G = (Color>>8)  & 255;
-				tileset->TilesetLookup[j].Shape.B = (Color>>0)  & 255;
+				tileset->TilesetLookup[insert_at].Shape.R = (Color>>16) & 255;
+				tileset->TilesetLookup[insert_at].Shape.G = (Color>>8)  & 255;
+				tileset->TilesetLookup[insert_at].Shape.B = (Color>>0)  & 255;
 
 				// Skip to the additional flags, in this case what width/height ratios are allowed
 				while(*Peek == ' ')
 					Peek++;
 				while(*Peek && *Peek != ' ') {
 					if(isdigit(*Peek))
-						tileset->TilesetLookup[j].Shape.Var |= 1 << (*Peek - '1');
+						tileset->TilesetLookup[insert_at].Shape.Var |= 1 << (*Peek - '1');
 					Peek++;
 				}
 			}				
 		}
+		if(added_one)
+			Count++;
 
 		// Next line
 		Peek = Next+1;
 	}
 
+	tileset->TileCount = Count;
 	tileset->TilesetLookup[Count].Style = STYLE_END;
 	tileset->TilesetLookup = realloc(tileset->TilesetLookup, sizeof(TilesetEntry)*(Count+1));
 	free(Buffer);
