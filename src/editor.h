@@ -84,6 +84,7 @@ typedef struct TilesetEntry { // convert to some sort of hash table later
 
 #define NUM_SPECIAL_CATEGORIES 3
 #define MAX_CATEGORIES 32
+#define HOTBAR_SIZE 10
 typedef struct TilesetInfo {
 	char Name[32];
 	TilesetEntry *TilesetLookup;
@@ -93,6 +94,13 @@ typedef struct TilesetInfo {
 	size_t CategoryCount;
 	size_t TileCount;
 	struct TilesetInfo *Next;
+
+	// Hotbar
+	char HotbarCategory[HOTBAR_SIZE];
+	uint8_t HotbarX[HOTBAR_SIZE];
+	uint8_t HotbarY[HOTBAR_SIZE];
+	uint16_t HotbarType[HOTBAR_SIZE];
+	int HotbarScroll[HOTBAR_SIZE];
 } TilesetInfo;
 
 // Info about each layer of the level

@@ -200,30 +200,64 @@ void DrawTilesetEntry(TilesetEntry *tile, int drawX, int drawY, SDL_RendererFlip
 
 }
 
+void PressedDigit(int which) {
+	if(EditorMode == MODE_LEVEL) {
+		if(NumLayers >= which + 1) {
+			CurLayer = which;
+			Redraw = 1;
+			UpdateTPRect();
+		}
+	} else if(EditorMode == MODE_PICKER) {
+		if(SDL_GetModState() & KMOD_CTRL) { // Set
+			int hovered_block = (TPCursorY+TPBlocksYScroll) * TP_BLOCKS_PER_ROW + TPCursorX;
+			if(hovered_block < 0 && hovered_block >= TPBlocksInCategoryCount)
+				return;
+			LayerInfos[CurLayer].Tileset->HotbarCategory[which] = LayerInfos[CurLayer].CurrentCategory;
+			LayerInfos[CurLayer].Tileset->HotbarX[which] = TPCursorX;
+			LayerInfos[CurLayer].Tileset->HotbarY[which] = TPCursorY;
+			LayerInfos[CurLayer].Tileset->HotbarScroll[which] = TPBlocksYScroll;
+			LayerInfos[CurLayer].Tileset->HotbarType[which] = TPBlocksInCategory[hovered_block];
+			Redraw = 1;
+		} else { // Get
+			LayerInfos[CurLayer].CurrentCategory = LayerInfos[CurLayer].Tileset->HotbarCategory[which];
+			TPCursorX = LayerInfos[CurLayer].Tileset->HotbarX[which];
+			TPCursorY = LayerInfos[CurLayer].Tileset->HotbarY[which];
+			TPBlocksYScroll = LayerInfos[CurLayer].Tileset->HotbarScroll[which];
+			Redraw = 1;
+			UpdateTPRect();
+			SDL_WarpMouseInWindow(window, TPBlocksRect.x+1+TPCursorX*18+TileW/2, TPBlocksRect.y+1+TPCursorY*18+TileH/2);
+		}
+	}
+}
+
 void KeyDown(SDL_Keysym key) {
 	int UndoMade = 0;
 
 	switch(key.scancode) {
-		case SDL_SCANCODE_1: CurLayer = 0; Redraw = 1; UpdateTPRect(); break;
-		case SDL_SCANCODE_2: if(NumLayers >= 2) CurLayer = 1; Redraw = 1; UpdateTPRect(); break;
-		case SDL_SCANCODE_3: if(NumLayers >= 3) CurLayer = 2; Redraw = 1; UpdateTPRect(); break;
-		case SDL_SCANCODE_4: if(NumLayers >= 4) CurLayer = 3; Redraw = 1; UpdateTPRect(); break;
-		case SDL_SCANCODE_5: if(NumLayers >= 5) CurLayer = 4; Redraw = 1; UpdateTPRect(); break;
-		case SDL_SCANCODE_6: if(NumLayers >= 6) CurLayer = 5; Redraw = 1; UpdateTPRect(); break;
-		case SDL_SCANCODE_7: if(NumLayers >= 7) CurLayer = 6; Redraw = 1; UpdateTPRect(); break;
-		case SDL_SCANCODE_8: if(NumLayers >= 8) CurLayer = 7; Redraw = 1; UpdateTPRect(); break;
-		case SDL_SCANCODE_9: if(NumLayers >= 9) CurLayer = 8; Redraw = 1; UpdateTPRect(); break;
-		case SDL_SCANCODE_0: if(NumLayers >= 10) CurLayer = 9; Redraw = 1; UpdateTPRect(); break;
+		case SDL_SCANCODE_1: PressedDigit(0); break;
+		case SDL_SCANCODE_2: PressedDigit(1); break;
+		case SDL_SCANCODE_3: PressedDigit(2); break;
+		case SDL_SCANCODE_4: PressedDigit(3); break;
+		case SDL_SCANCODE_5: PressedDigit(4); break;
+		case SDL_SCANCODE_6: PressedDigit(5); break;
+		case SDL_SCANCODE_7: PressedDigit(6); break;
+		case SDL_SCANCODE_8: PressedDigit(7); break;
+		case SDL_SCANCODE_9: PressedDigit(8); break;
+		case SDL_SCANCODE_0: PressedDigit(9); break;
 		default:
 			break;
 	}
 	switch(key.sym) {
 		case SDLK_z: // Undo
+			if((SDL_GetModState() & KMOD_CTRL) == 0)
+				break;
 			Undo();
 			RerenderMap = 1;
 			Redraw = 1;
 			break;
 		case SDLK_y: // Redo
+			if((SDL_GetModState() & KMOD_CTRL) == 0)
+				break;
 			Redo();
 			RerenderMap = 1;
 			Redraw = 1;
@@ -231,16 +265,6 @@ void KeyDown(SDL_Keysym key) {
 
 		case SDLK_e: // Toggle the picker
 			if(EditorMode == MODE_LEVEL) {
-				/*
-				for(LevelRect *R = LayerInfos[CurLayer].Rects; R; R=R->Next) {
-					if(R->Selected) {
-						// TODO
-						int Type = 0; //LayerInfos[CurLayer].Tileset->TilesetLookup[R->Type].Id;
-						TPCursorX = Type & 0xff;
-						TPCursorY = Type >> 8;
-					}
-				}
-				*/
 				UpdateTPRect();
 				EditorMode = MODE_PICKER;
 				WarpForTP();
@@ -257,7 +281,6 @@ void KeyDown(SDL_Keysym key) {
 			break;
 		case SDLK_DELETE:
 			AvailableRect = NULL;
-
 
 			// Erase all selected rectangles
 			LevelRect *R = LayerInfos[CurLayer].Rects;
@@ -712,6 +735,7 @@ void TextInput(char Key) {
 				} else {
 					LayerInfos[CurLayer].CurrentCategory--;
 				}
+				TPBlocksYScroll = 0;
 				UpdateTPRect();
 				Redraw = 1;
 			}
@@ -733,6 +757,7 @@ void TextInput(char Key) {
 				} else {
 					LayerInfos[CurLayer].CurrentCategory++;
 				}
+				TPBlocksYScroll = 0;
 				UpdateTPRect();
 				Redraw = 1;
 			}
@@ -1208,7 +1233,10 @@ void DrawGUI() {
 		}
 		for(int i=0; i<10; i++) {
 			RenderFormatText(ScreenRenderer, &MainFont, TPHotkeysRect.x+1+i*36, TPHotkeysRect.y+1, SIMPLE_TEXT_ON_WHITE, "%d", (i+1)%10);
+			DrawTilesetEntry(&LayerInfos[CurLayer].Tileset->TilesetLookup[LayerInfos[CurLayer].Tileset->HotbarType[i]],
+				TPHotkeysRect.x+14+i*36, TPHotkeysRect.y+1, SDL_FLIP_NONE);
 		}
+		fflush(stdout);
 		rect(ScreenRenderer, TPRect.x-1, TPRect.y-1, TPRect.w+2, TPRect.h+2);
 
 		// Display available categories
@@ -1252,7 +1280,7 @@ void DrawGUI() {
 		}
 		RenderSimpleText(ScreenRenderer, &MainFont, TPRect.x, TPCategoryNameRect.y+2, 0, category_name);
 
-		int hovered_block = TPCursorY * TP_BLOCKS_PER_ROW + TPCursorX;
+		int hovered_block = (TPCursorY+TPBlocksYScroll) * TP_BLOCKS_PER_ROW + TPCursorX;
 		if(hovered_block >= 0 && hovered_block < TPBlocksInCategoryCount)
 			RenderSimpleText(ScreenRenderer, &MainFont, TPRect.x, TPBlockNameRect.y+2, 0, LayerInfos[CurLayer].Tileset->TilesetLookup[TPBlocksInCategory[hovered_block]].Name);
 	}
