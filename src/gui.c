@@ -46,12 +46,12 @@ SDL_Texture *TPTexture  = NULL;
 SDL_Rect TPRect = {0, 0, 0, 0};
 SDL_Rect TPCategoryNameRect = {0, 0, 0, 0};
 SDL_Rect TPCategoriesRect = {0, 0, 0, 0};
-SDL_Rect TPHotkeysRect = {0, 0, 0, 0};
+SDL_Rect TPHotbarRect = {0, 0, 0, 0};
 SDL_Rect TPBlockNameRect = {0, 0, 0, 0};
 SDL_Rect TPBlocksRect = {0, 0, 0, 0};
 #define TP_TEXT_HEIGHT 20
 #define TP_CATEGORY_HEIGHT 36
-#define TP_HOTKEYS_HEIGHT 18
+#define TP_HOTBAR_HEIGHT 18
 #define TP_BLOCKS_PER_ROW 20
 int TPRows = 16;
 char TPSearchText[64] = "";
@@ -107,14 +107,14 @@ void UpdateTPRect() {
 	TPRect.w = 360;
 	TPCategoryNameRect.w = TPRect.w;
 	TPCategoriesRect.w   = TPRect.w;
-	TPHotkeysRect.w      = TPRect.w;
+	TPHotbarRect.w      = TPRect.w;
 	TPBlockNameRect.w    = TPRect.w;
 	TPBlocksRect.w       = TPRect.w;
 
 	TPRect.x = ScreenWidth/2-TPRect.w/2;
 	TPCategoryNameRect.x = TPRect.x;
 	TPCategoriesRect.x   = TPRect.x;
-	TPHotkeysRect.x      = TPRect.x;
+	TPHotbarRect.x      = TPRect.x;
 	TPBlockNameRect.x    = TPRect.x;
 	TPBlocksRect.x       = TPRect.x;
 
@@ -123,9 +123,9 @@ void UpdateTPRect() {
 	TPCategoryNameRect.h = TP_TEXT_HEIGHT;
 	TPCategoriesRect.y   = TPCategoryNameRect.y + TPCategoryNameRect.h + 1;
 	TPCategoriesRect.h   = TP_CATEGORY_HEIGHT;
-	TPHotkeysRect.y      = TPCategoriesRect.y + TPCategoriesRect.h + 1;
-	TPHotkeysRect.h      = TP_HOTKEYS_HEIGHT;
-	TPBlockNameRect.y    = TPHotkeysRect.y + TPHotkeysRect.h + 1;
+	TPHotbarRect.y      = TPCategoriesRect.y + TPCategoriesRect.h + 1;
+	TPHotbarRect.h      = TP_HOTBAR_HEIGHT;
+	TPBlockNameRect.y    = TPHotbarRect.y + TPHotbarRect.h + 1;
 	TPBlockNameRect.h    = TP_TEXT_HEIGHT;
 	TPBlocksRect.y       = TPBlockNameRect.y + TPBlockNameRect.h + 1;
 	TPBlocksRect.h       = 18 * TPRows+1;
@@ -137,7 +137,7 @@ void UpdateTPRect() {
 	// Put everything on the window with the new calculated "center of screen" position
 	TPCategoryNameRect.y += TPRect.y;
 	TPCategoriesRect.y   += TPRect.y;
-	TPHotkeysRect.y      += TPRect.y;
+	TPHotbarRect.y      += TPRect.y;
 	TPBlockNameRect.y    += TPRect.y;
 	TPBlocksRect.y       += TPRect.y;
 
@@ -216,6 +216,10 @@ void DrawTilesetEntry(TilesetEntry *tile, int drawX, int drawY, SDL_RendererFlip
 }
 
 void PressedDigit(int which) {
+	if(which < 0 || which >= 10) {
+		return;
+	}
+
 	if(EditorMode == MODE_LEVEL) {
 		if(NumLayers >= which + 1) {
 			CurLayer = which;
@@ -457,16 +461,56 @@ void MouseMove(int x, int y) {
 			CursorShown = 0;
 		}
 	} else if(EditorMode == MODE_PICKER){
+		// Redraw it regardless of what you're hovering
+		if(IsInsideRect(x, y, TPRect.x, TPRect.y, TPRect.w, TPRect.h)) {
+			Redraw = 1;
+		}
+
 		if(IsInsideRect(x, y, TPBlocksRect.x, TPBlocksRect.y, TPBlocksRect.w, TPBlocksRect.h)) {
 			TPCursorY = (y-TPBlocksRect.y) / (TileH+2);
 			TPCursorX = (x-TPBlocksRect.x) / (TileW+2);
-			Redraw = 1;
 		}
 	}
 
 	// Normal cursor if none was set otherwise
 	if(!SetACursor)
 		GUI_SetCursor(SYSCURSOR_NORMAL);
+}
+
+void CloneFromPicker() {
+	// Unselect all first
+	for(LevelRect *R = LayerInfos[CurLayer].Rects; R; R=R->Next) {
+		R->Selected = 0;
+	}
+
+	LevelRect *End = LevelEndRect(CurLayer);
+	LevelRect *Copy = (LevelRect*)calloc(1, sizeof(LevelRect));
+
+	int index = (TPBlocksYScroll + TPCursorY) * TP_BLOCKS_PER_ROW + TPCursorX;
+	if(index < 0 || index >= TPBlocksInCategoryCount)
+		return;
+
+	Copy->Selected = 1;
+	Copy->W = 1;
+	Copy->H = 1;
+	Copy->X = CursorX + CameraX;
+	Copy->Y = CursorY + CameraY;
+	Copy->Type = TPBlocksInCategory[index];
+
+	// Set the links
+	if(End == NULL) {
+		LayerInfos[CurLayer].Rects = Copy;
+	} else {
+		Copy->Prev = End;
+		Copy->Next = NULL;
+		End->Next = Copy;
+	}
+
+	DraggingMove = 1;
+	Redraw = 1;
+	RerenderMap = 1;
+	EditorMode = MODE_LEVEL;
+	WarpForLevelEditor();
 }
 
 void LeftClick() {
@@ -506,39 +550,14 @@ void LeftClick() {
 			Redraw = 1;
 		}
 	} else {
-		// Unselect all first
-		for(LevelRect *R = LayerInfos[CurLayer].Rects; R; R=R->Next) {
-			R->Selected = 0;
+		int x, y;
+		SDL_GetMouseState(&x, &y);
+		if(IsInsideRect(x, y, TPBlocksRect.x, TPBlocksRect.y, TPBlocksRect.w, TPBlocksRect.h)) {
+			CloneFromPicker();
+		} else if(IsInsideRect(x, y, TPHotbarRect.x, TPHotbarRect.y, TPHotbarRect.w, TPHotbarRect.h)) {
+			PressedDigit((x-TPHotbarRect.x)/36);
+			CloneFromPicker();
 		}
-
-		LevelRect *End = LevelEndRect(CurLayer);
-		LevelRect *Copy = (LevelRect*)calloc(1, sizeof(LevelRect));
-
-		int index = (TPBlocksYScroll + TPCursorY) * TP_BLOCKS_PER_ROW + TPCursorX;
-		if(index < 0 || index >= TPBlocksInCategoryCount)
-			return;
-
-		Copy->Selected = 1;
-		Copy->W = 1;
-		Copy->H = 1;
-		Copy->X = CursorX + CameraX;
-		Copy->Y = CursorY + CameraY;
-		Copy->Type = TPBlocksInCategory[index];
-
-		// Set the links
-		if(End == NULL) {
-			LayerInfos[CurLayer].Rects = Copy;
-		} else {
-			Copy->Prev = End;
-			Copy->Next = NULL;
-			End->Next = Copy;
-		}
-
-		DraggingMove = 1;
-		Redraw = 1;
-		RerenderMap = 1;
-		EditorMode = MODE_LEVEL;
-		WarpForLevelEditor();
 	}
 }
 
@@ -1228,6 +1247,9 @@ void DrawGUI() {
 
 	// Draw the tile picker
 	if(EditorMode == MODE_PICKER) {
+		int mouseX, mouseY;
+		SDL_GetMouseState(&mouseX, &mouseY);
+
 		SDL_SetRenderDrawColor(ScreenRenderer, 255, 255, 255, 255);
 		SDL_RenderFillRect(ScreenRenderer, &TPRect);
 
@@ -1245,21 +1267,25 @@ void DrawGUI() {
 		int right = TPRect.x+TPRect.w-1;
 		SDL_RenderDrawLine(ScreenRenderer, left, TPCategoryNameRect.y+TPCategoryNameRect.h, right, TPCategoryNameRect.y+TPCategoryNameRect.h);
 		SDL_RenderDrawLine(ScreenRenderer, left, TPCategoriesRect.y+TPCategoriesRect.h, right, TPCategoriesRect.y+TPCategoriesRect.h);
-		SDL_RenderDrawLine(ScreenRenderer, left, TPHotkeysRect.y+TPHotkeysRect.h, right, TPHotkeysRect.y+TPHotkeysRect.h);
+		SDL_RenderDrawLine(ScreenRenderer, left, TPHotbarRect.y+TPHotbarRect.h, right, TPHotbarRect.y+TPHotbarRect.h);
 		SDL_RenderDrawLine(ScreenRenderer, left, TPBlockNameRect.y+TPBlockNameRect.h, right, TPBlockNameRect.y+TPBlockNameRect.h);
 		rect(ScreenRenderer, TPRect.x-1, TPRect.y-1, TPRect.w+2, TPRect.h+2);
 
-		// Display hotkeys
+		// Display hotbar
 		for(int i=0; i<9; i++) {
-			rect(ScreenRenderer, TPHotkeysRect.x+35+i*36, TPHotkeysRect.y, 2, TPHotkeysRect.h);
+			rect(ScreenRenderer, TPHotbarRect.x+35+i*36, TPHotbarRect.y, 2, TPHotbarRect.h);
 		}
 		for(int i=0; i<10; i++) {
-			RenderFormatText(ScreenRenderer, &MainFont, TPHotkeysRect.x+1+i*36, TPHotkeysRect.y+1, SIMPLE_TEXT_ON_WHITE, "%d", (i+1)%10);
+			RenderFormatText(ScreenRenderer, &MainFont, TPHotbarRect.x+1+i*36, TPHotbarRect.y+1, SIMPLE_TEXT_ON_WHITE, "%d", (i+1)%10);
 			DrawTilesetEntry(&LayerInfos[CurLayer].Tileset->TilesetLookup[LayerInfos[CurLayer].Tileset->HotbarType[i]],
-				TPHotkeysRect.x+14+i*36, TPHotkeysRect.y+1, SDL_FLIP_NONE);
+				TPHotbarRect.x+14+i*36, TPHotbarRect.y+1, SDL_FLIP_NONE);
 		}
-		fflush(stdout);
 		rect(ScreenRenderer, TPRect.x-1, TPRect.y-1, TPRect.w+2, TPRect.h+2);
+
+		// Offer to click on a hotbar
+		if(IsInsideRect(mouseX, mouseY, TPHotbarRect.x, TPHotbarRect.y, TPHotbarRect.w, TPHotbarRect.h)) {
+			DrawSelectionBox(TPHotbarRect.x+((mouseX-TPHotbarRect.x)/36*36), TPHotbarRect.y, 36, TPHotbarRect.h, &AvailableColor);
+		}
 
 		// Display available categories
 		int last_category_index = NUM_SPECIAL_CATEGORIES + LayerInfos[CurLayer].Tileset->CategoryCount - 1;
