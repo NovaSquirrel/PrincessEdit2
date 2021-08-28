@@ -27,6 +27,7 @@ SDL_Window *window = NULL;
 SDL_Renderer *ScreenRenderer = NULL;
 SDL_Cursor *SystemCursors[SYSCURSOR_MAX];
 SDL_Surface *WindowIcon = NULL;
+SDL_Texture *UITexture = NULL;
 int retraces = 0, SetACursor, CurLayer = 0;
 int Redraw = 1, RerenderMap = 0;
 FontSet MainFont, TinyFont, VeryTinyFont;
@@ -38,10 +39,26 @@ int DraggingSelectX, DraggingSelectY;
 int ResizeUp = 0, ResizeLeft = 0, ResizeRight = 0, ResizeDown = 0, ResizeOffer = 0;
 int CursorX = 0, CursorY = 0, CursorShown = 0;
 int TPCursorX = 0, TPCursorY = 0, TPTilesWide, TPTilesTall;
+int SavedTPX = -1, SavedTPY = -1;
 LevelRect *AvailableRect = NULL; // available level rectangle
 
 SDL_Texture *TPTexture  = NULL;
 SDL_Rect TPRect = {0, 0, 0, 0};
+SDL_Rect TPCategoryNameRect = {0, 0, 0, 0};
+SDL_Rect TPCategoriesRect = {0, 0, 0, 0};
+SDL_Rect TPHotbarRect = {0, 0, 0, 0};
+SDL_Rect TPBlockNameRect = {0, 0, 0, 0};
+SDL_Rect TPBlocksRect = {0, 0, 0, 0};
+#define TP_TEXT_HEIGHT 20
+#define TP_CATEGORY_HEIGHT 36
+#define TP_HOTBAR_HEIGHT 18
+#define TP_BLOCKS_PER_ROW 20
+int TPRows = 16;
+char TPSearchText[64] = "";
+
+int TPBlocksInCategory[MAX_TILESET_SIZE];
+int TPBlocksInCategoryCount;
+int TPBlocksYScroll = 0;
 
 enum {
 	MODE_LEVEL,
@@ -63,51 +80,203 @@ SDL_Rect MakeSelectRect(LevelRect *Rect, int Offset) {
 }
 
 void WarpForLevelEditor() {
+	SDL_GetMouseState(&SavedTPX, &SavedTPY);
 	SDL_WarpMouseInWindow(window, MapViewX+CursorX*TileW+TileW/2, MapViewY+CursorY*TileH+TileH/2);
 }
 
 void WarpForTP() {
-	SDL_WarpMouseInWindow(window, TPRect.x+TPCursorX*(TileW+2)+(TileW+2)/2, TPRect.y+TPCursorY*(TileH+2)+(TileH+2)/2);
+	if(SavedTPX != -1 && SavedTPY != -1)
+		SDL_WarpMouseInWindow(window, SavedTPX, SavedTPY);
+	else
+		SDL_WarpMouseInWindow(window, TPRect.x+TPRect.w/2, TPRect.y+TPRect.h/2);
+}
+
+int MatchesSearch(const char *name) {
+	if(!TPSearchText[0])
+		return 1;
+	char lower[strlen(name)+1];
+	for(int i=0; name[i]; i++) {
+		lower[i] = tolower(name[i]);
+	}
+	lower[strlen(name)] = 0;
+
+	return strstr(lower, TPSearchText) != NULL;
 }
 
 void UpdateTPRect() {
-	int TPW, TPH;
-	TPTexture = LayerInfos[CurLayer].Texture;
-	SDL_QueryTexture(TPTexture, NULL, NULL, &TPW, &TPH);
+	TPRect.w = 360;
+	TPCategoryNameRect.w = TPRect.w;
+	TPCategoriesRect.w   = TPRect.w;
+	TPHotbarRect.w      = TPRect.w;
+	TPBlockNameRect.w    = TPRect.w;
+	TPBlocksRect.w       = TPRect.w;
 
-	TPTilesWide = TPW / TileW;
-	TPTilesTall = TPH / TileH;
-				
-	TPRect.x = ScreenWidth/2-(TPTilesWide*(TileW+2))/2;
-	TPRect.y = ScreenHeight/2-(TPTilesTall*(TileH+2))/2;
-	TPRect.w = TPTilesWide*(TileW+2);
-	TPRect.h = TPTilesTall*(TileH+2);
+	TPRect.x = ScreenWidth/2-TPRect.w/2;
+	TPCategoryNameRect.x = TPRect.x;
+	TPCategoriesRect.x   = TPRect.x;
+	TPHotbarRect.x      = TPRect.x;
+	TPBlockNameRect.x    = TPRect.x;
+	TPBlocksRect.x       = TPRect.x;
+
+	// Calculate Y positions
+	TPCategoryNameRect.y = 0;
+	TPCategoryNameRect.h = TP_TEXT_HEIGHT;
+	TPCategoriesRect.y   = TPCategoryNameRect.y + TPCategoryNameRect.h + 1;
+	TPCategoriesRect.h   = TP_CATEGORY_HEIGHT;
+	TPHotbarRect.y      = TPCategoriesRect.y + TPCategoriesRect.h + 1;
+	TPHotbarRect.h      = TP_HOTBAR_HEIGHT;
+	TPBlockNameRect.y    = TPHotbarRect.y + TPHotbarRect.h + 1;
+	TPBlockNameRect.h    = TP_TEXT_HEIGHT;
+	TPBlocksRect.y       = TPBlockNameRect.y + TPBlockNameRect.h + 1;
+	TPBlocksRect.h       = 18 * TPRows+1;
+
+	// Center it on the screen
+	TPRect.h = TPBlocksRect.y + TPBlocksRect.h;
+	TPRect.y = ScreenHeight/2-TPRect.h/2;
+
+	// Put everything on the window with the new calculated "center of screen" position
+	TPCategoryNameRect.y += TPRect.y;
+	TPCategoriesRect.y   += TPRect.y;
+	TPHotbarRect.y      += TPRect.y;
+	TPBlockNameRect.y    += TPRect.y;
+	TPBlocksRect.y       += TPRect.y;
+
+	// Find out what stuff is in the current category...
+	int last_category_index = NUM_SPECIAL_CATEGORIES + LayerInfos[CurLayer].Tileset->CategoryCount - 1;
+
+	if(LayerInfos[CurLayer].CurrentCategory == 0) { // Everything
+		TPBlocksInCategoryCount = 0;
+		for(int i=0; i<LayerInfos[CurLayer].Tileset->TileCount; i++)
+			if(MatchesSearch(LayerInfos[CurLayer].Tileset->TilesetLookup[i].Name))
+				TPBlocksInCategory[TPBlocksInCategoryCount++] = i;
+	} else if(LayerInfos[CurLayer].CurrentCategory == last_category_index) { // Recent
+		TPBlocksInCategoryCount = 0;
+	} else if(LayerInfos[CurLayer].CurrentCategory == last_category_index-1) { // Favorites
+		TPBlocksInCategoryCount = 0;
+	} else { // Everything else
+		TPBlocksInCategoryCount = 0;
+		int category_mask = 1 << (LayerInfos[CurLayer].CurrentCategory - 1); // Skip the "everything" category
+		for(int i=0; i<LayerInfos[CurLayer].Tileset->TileCount; i++) {
+			if((LayerInfos[CurLayer].Tileset->TilesetLookup[i].Categories & category_mask)
+				&& MatchesSearch(LayerInfos[CurLayer].Tileset->TilesetLookup[i].Name)) {
+				TPBlocksInCategory[TPBlocksInCategoryCount++] = i;
+			}
+		}
+	}
+}
+
+inline SDL_RendererFlip FlipsFromTile(uint16_t tile) {
+	return ((tile&0x4000)?SDL_FLIP_HORIZONTAL:0) | ((tile&0x8000)?SDL_FLIP_VERTICAL:0);
+}
+
+inline int YFromTile(uint16_t tile) {
+	return (tile & 0x3f00) >> 8;
+}
+
+inline int XFromTile(uint16_t tile) {
+	return tile & 0x00ff;
+}
+
+void DrawTilesetEntry(TilesetEntry *tile, int drawX, int drawY, SDL_RendererFlip flip) {
+	switch(tile->Style) {
+		case STYLE_SINGLE:
+			blitf(tile->Texture, ScreenRenderer,
+				XFromTile(tile->Single.Tile)*TileW/2, YFromTile(tile->Single.Tile)*TileH/2,
+				drawX, drawY, TileW, TileH, flip ^ FlipsFromTile(tile->Single.Tile));
+			break;
+		case STYLE_QUAD:
+			blitf(tile->Texture, ScreenRenderer,
+				XFromTile(tile->Quad.Tiles[0])*TileW/2,
+				YFromTile(tile->Quad.Tiles[0])*TileH/2,
+				drawX+((flip&SDL_FLIP_HORIZONTAL)?8:0), drawY+((flip&SDL_FLIP_VERTICAL)?8:0),
+				TileW/2, TileH/2, flip ^ FlipsFromTile(tile->Quad.Tiles[0]));
+			blitf(tile->Texture, ScreenRenderer,
+				XFromTile(tile->Quad.Tiles[1])*TileW/2,
+				YFromTile(tile->Quad.Tiles[1])*TileH/2,
+				drawX+((flip&SDL_FLIP_HORIZONTAL)?0:8), drawY+((flip&SDL_FLIP_VERTICAL)?8:0),
+				TileW/2, TileH/2, flip ^ FlipsFromTile(tile->Quad.Tiles[1]));
+			blitf(tile->Texture, ScreenRenderer,
+				XFromTile(tile->Quad.Tiles[2])*TileW/2,
+				YFromTile(tile->Quad.Tiles[2])*TileH/2,
+				drawX+((flip&SDL_FLIP_HORIZONTAL)?8:0), drawY+((flip&SDL_FLIP_VERTICAL)?0:8),
+				TileW/2, TileH/2, flip ^ FlipsFromTile(tile->Quad.Tiles[2]));
+			blitf(tile->Texture, ScreenRenderer,
+				XFromTile(tile->Quad.Tiles[3])*TileW/2,
+				YFromTile(tile->Quad.Tiles[3])*TileH/2,
+				drawX+((flip&SDL_FLIP_HORIZONTAL)?0:8), drawY+((flip&SDL_FLIP_VERTICAL)?0:8),
+				TileW/2, TileH/2, flip ^ FlipsFromTile(tile->Quad.Tiles[3]));
+			break;
+		case STYLE_RIGHT_TRIANGLE:
+			blitf(tile->Texture, ScreenRenderer,
+				XFromTile(tile->Shape.Tile)*TileW/2, YFromTile(tile->Shape.Tile)*TileH/2,
+				drawX, drawY, TileW, TileH, flip ^ FlipsFromTile(tile->Shape.Tile));
+			break;
+	}
+
+}
+
+void PressedDigit(int which) {
+	if(which < 0 || which >= 10) {
+		return;
+	}
+
+	if(EditorMode == MODE_LEVEL) {
+		if(NumLayers >= which + 1) {
+			CurLayer = which;
+			Redraw = 1;
+			UpdateTPRect();
+		}
+	} else if(EditorMode == MODE_PICKER) {
+		if(SDL_GetModState() & KMOD_CTRL) { // Set
+			int hovered_block = (TPCursorY+TPBlocksYScroll) * TP_BLOCKS_PER_ROW + TPCursorX;
+			if(hovered_block < 0 && hovered_block >= TPBlocksInCategoryCount)
+				return;
+			LayerInfos[CurLayer].Tileset->HotbarCategory[which] = LayerInfos[CurLayer].CurrentCategory;
+			LayerInfos[CurLayer].Tileset->HotbarX[which] = TPCursorX;
+			LayerInfos[CurLayer].Tileset->HotbarY[which] = TPCursorY;
+			LayerInfos[CurLayer].Tileset->HotbarScroll[which] = TPBlocksYScroll;
+			LayerInfos[CurLayer].Tileset->HotbarType[which] = TPBlocksInCategory[hovered_block];
+			Redraw = 1;
+		} else { // Get
+			LayerInfos[CurLayer].CurrentCategory = LayerInfos[CurLayer].Tileset->HotbarCategory[which];
+			TPCursorX = LayerInfos[CurLayer].Tileset->HotbarX[which];
+			TPCursorY = LayerInfos[CurLayer].Tileset->HotbarY[which];
+			TPBlocksYScroll = LayerInfos[CurLayer].Tileset->HotbarScroll[which];
+			Redraw = 1;
+			UpdateTPRect();
+			SDL_WarpMouseInWindow(window, TPBlocksRect.x+1+TPCursorX*18+TileW/2, TPBlocksRect.y+1+TPCursorY*18+TileH/2);
+		}
+	}
 }
 
 void KeyDown(SDL_Keysym key) {
 	int UndoMade = 0;
 
 	switch(key.scancode) {
-		case SDL_SCANCODE_1: CurLayer = 0; Redraw = 1; UpdateTPRect(); break;
-		case SDL_SCANCODE_2: if(NumLayers >= 2) CurLayer = 1; Redraw = 1; UpdateTPRect(); break;
-		case SDL_SCANCODE_3: if(NumLayers >= 3) CurLayer = 2; Redraw = 1; UpdateTPRect(); break;
-		case SDL_SCANCODE_4: if(NumLayers >= 4) CurLayer = 3; Redraw = 1; UpdateTPRect(); break;
-		case SDL_SCANCODE_5: if(NumLayers >= 5) CurLayer = 4; Redraw = 1; UpdateTPRect(); break;
-		case SDL_SCANCODE_6: if(NumLayers >= 6) CurLayer = 5; Redraw = 1; UpdateTPRect(); break;
-		case SDL_SCANCODE_7: if(NumLayers >= 7) CurLayer = 6; Redraw = 1; UpdateTPRect(); break;
-		case SDL_SCANCODE_8: if(NumLayers >= 8) CurLayer = 7; Redraw = 1; UpdateTPRect(); break;
-		case SDL_SCANCODE_9: if(NumLayers >= 9) CurLayer = 8; Redraw = 1; UpdateTPRect(); break;
-		case SDL_SCANCODE_0: if(NumLayers >= 10) CurLayer = 9; Redraw = 1; UpdateTPRect(); break;
+		case SDL_SCANCODE_1: PressedDigit(0); break;
+		case SDL_SCANCODE_2: PressedDigit(1); break;
+		case SDL_SCANCODE_3: PressedDigit(2); break;
+		case SDL_SCANCODE_4: PressedDigit(3); break;
+		case SDL_SCANCODE_5: PressedDigit(4); break;
+		case SDL_SCANCODE_6: PressedDigit(5); break;
+		case SDL_SCANCODE_7: PressedDigit(6); break;
+		case SDL_SCANCODE_8: PressedDigit(7); break;
+		case SDL_SCANCODE_9: PressedDigit(8); break;
+		case SDL_SCANCODE_0: PressedDigit(9); break;
 		default:
 			break;
 	}
 	switch(key.sym) {
 		case SDLK_z: // Undo
+			if((SDL_GetModState() & KMOD_CTRL) == 0)
+				break;
 			Undo();
 			RerenderMap = 1;
 			Redraw = 1;
 			break;
 		case SDLK_y: // Redo
+			if((SDL_GetModState() & KMOD_CTRL) == 0)
+				break;
 			Redo();
 			RerenderMap = 1;
 			Redraw = 1;
@@ -115,16 +284,7 @@ void KeyDown(SDL_Keysym key) {
 
 		case SDLK_e: // Toggle the picker
 			if(EditorMode == MODE_LEVEL) {
-				for(LevelRect *R = LayerInfos[CurLayer].Rects; R; R=R->Next) {
-					if(R->Selected) {
-						int Type = LayerInfos[CurLayer].TilesetLookup[R->Type].Id;
-						TPCursorX = Type & 0xff;
-						TPCursorY = Type >> 8;
-					}
-				}
-
 				UpdateTPRect();
-
 				EditorMode = MODE_PICKER;
 				WarpForTP();
 			} else {
@@ -140,7 +300,6 @@ void KeyDown(SDL_Keysym key) {
 			break;
 		case SDLK_DELETE:
 			AvailableRect = NULL;
-
 
 			// Erase all selected rectangles
 			LevelRect *R = LayerInfos[CurLayer].Rects;
@@ -301,17 +460,57 @@ void MouseMove(int x, int y) {
 			if(CursorShown) Redraw = 1;
 			CursorShown = 0;
 		}
-	} else {
+	} else if(EditorMode == MODE_PICKER){
+		// Redraw it regardless of what you're hovering
 		if(IsInsideRect(x, y, TPRect.x, TPRect.y, TPRect.w, TPRect.h)) {
-			TPCursorY = (y-TPRect.y) / (TileH+2);
-			TPCursorX = (x-TPRect.x) / (TileW+2);
 			Redraw = 1;
+		}
+
+		if(IsInsideRect(x, y, TPBlocksRect.x, TPBlocksRect.y, TPBlocksRect.w, TPBlocksRect.h)) {
+			TPCursorY = (y-TPBlocksRect.y) / (TileH+2);
+			TPCursorX = (x-TPBlocksRect.x) / (TileW+2);
 		}
 	}
 
 	// Normal cursor if none was set otherwise
 	if(!SetACursor)
 		GUI_SetCursor(SYSCURSOR_NORMAL);
+}
+
+void CloneFromPicker() {
+	// Unselect all first
+	for(LevelRect *R = LayerInfos[CurLayer].Rects; R; R=R->Next) {
+		R->Selected = 0;
+	}
+
+	LevelRect *End = LevelEndRect(CurLayer);
+	LevelRect *Copy = (LevelRect*)calloc(1, sizeof(LevelRect));
+
+	int index = (TPBlocksYScroll + TPCursorY) * TP_BLOCKS_PER_ROW + TPCursorX;
+	if(index < 0 || index >= TPBlocksInCategoryCount)
+		return;
+
+	Copy->Selected = 1;
+	Copy->W = 1;
+	Copy->H = 1;
+	Copy->X = CursorX + CameraX;
+	Copy->Y = CursorY + CameraY;
+	Copy->Type = TPBlocksInCategory[index];
+
+	// Set the links
+	if(End == NULL) {
+		LayerInfos[CurLayer].Rects = Copy;
+	} else {
+		Copy->Prev = End;
+		Copy->Next = NULL;
+		End->Next = Copy;
+	}
+
+	DraggingMove = 1;
+	Redraw = 1;
+	RerenderMap = 1;
+	EditorMode = MODE_LEVEL;
+	WarpForLevelEditor();
 }
 
 void LeftClick() {
@@ -351,39 +550,14 @@ void LeftClick() {
 			Redraw = 1;
 		}
 	} else {
-		// Unselect all first
-		for(LevelRect *R = LayerInfos[CurLayer].Rects; R; R=R->Next) {
-			R->Selected = 0;
+		int x, y;
+		SDL_GetMouseState(&x, &y);
+		if(IsInsideRect(x, y, TPBlocksRect.x, TPBlocksRect.y, TPBlocksRect.w, TPBlocksRect.h)) {
+			CloneFromPicker();
+		} else if(IsInsideRect(x, y, TPHotbarRect.x, TPHotbarRect.y, TPHotbarRect.w, TPHotbarRect.h)) {
+			PressedDigit((x-TPHotbarRect.x)/36);
+			CloneFromPicker();
 		}
-
-		LevelRect *End = LevelEndRect(CurLayer);
-		LevelRect *Copy = (LevelRect*)calloc(1, sizeof(LevelRect));
-
-		int Type = TilesetLookupIdToIndex(CurLayer, (TPCursorY<<8)|TPCursorX);
-		if(Type == - 1)
-			return;
-
-		Copy->Selected = 1;
-		Copy->W = 1;
-		Copy->H = 1;
-		Copy->X = CursorX + CameraX;
-		Copy->Y = CursorY + CameraY;
-		Copy->Type = Type;
-
-		// Set the links
-		if(End == NULL) {
-			LayerInfos[CurLayer].Rects = Copy;
-		} else {
-			Copy->Prev = End;
-			Copy->Next = NULL;
-			End->Next = Copy;
-		}
-
-		DraggingMove = 1;
-		Redraw = 1;
-		RerenderMap = 1;
-		EditorMode = MODE_LEVEL;
-		WarpForLevelEditor();
 	}
 }
 
@@ -586,14 +760,87 @@ void TextInput(char Key) {
 			RerenderMap = 1;
 			break;
 
-		case 'a': CameraX--; Redraw = 1; break;
-		case 's': CameraY++; Redraw = 1; break;
-		case 'd': CameraX++; Redraw = 1; break;
-		case 'w': CameraY--; Redraw = 1; break;
-		case 'A': CameraX-=10; Redraw = 1; break;
-		case 'S': CameraY+=10; Redraw = 1; break;
-		case 'D': CameraX+=10; Redraw = 1; break;
-		case 'W': CameraY-=10; Redraw = 1; break;
+		case 'a':
+			if(EditorMode == MODE_LEVEL) {
+				CameraX--; Redraw = 1;
+			} else if(EditorMode == MODE_PICKER) {
+				if(LayerInfos[CurLayer].CurrentCategory == 0) {
+					LayerInfos[CurLayer].CurrentCategory = LayerInfos[CurLayer].Tileset->CategoryCount + NUM_SPECIAL_CATEGORIES - 1;
+				} else {
+					LayerInfos[CurLayer].CurrentCategory--;
+				}
+				TPBlocksYScroll = 0;
+				UpdateTPRect();
+				Redraw = 1;
+			}
+			break;
+		case 's':
+			if(EditorMode == MODE_LEVEL) {
+				CameraY++; Redraw = 1;
+			} else if(EditorMode == MODE_PICKER) {
+				TPBlocksYScroll++;
+				Redraw = 1;
+			}
+			break;
+		case 'd':
+			if(EditorMode == MODE_LEVEL) {
+				CameraX++; Redraw = 1;
+			} else if(EditorMode == MODE_PICKER) {
+				if(LayerInfos[CurLayer].CurrentCategory == LayerInfos[CurLayer].Tileset->CategoryCount + NUM_SPECIAL_CATEGORIES - 1) {
+					LayerInfos[CurLayer].CurrentCategory = 0;
+				} else {
+					LayerInfos[CurLayer].CurrentCategory++;
+				}
+				TPBlocksYScroll = 0;
+				UpdateTPRect();
+				Redraw = 1;
+			}
+			break;
+		case 'w':
+			if(EditorMode == MODE_LEVEL) {
+				CameraY--; Redraw = 1;
+			} else if(EditorMode == MODE_PICKER) {
+				if(TPBlocksYScroll)
+					TPBlocksYScroll--;
+				Redraw = 1;
+			}
+			break;
+		case 'A':
+			if(EditorMode == MODE_LEVEL) {
+				CameraX-=10; Redraw = 1;
+			} else if(EditorMode == MODE_PICKER) {
+				LayerInfos[CurLayer].CurrentCategory = 0;
+				UpdateTPRect();
+				Redraw = 1;
+			}
+			break;
+		case 'S':
+			if(EditorMode == MODE_LEVEL) {
+				CameraY+=10; Redraw = 1;
+			} else if(EditorMode == MODE_PICKER) {
+				TPBlocksYScroll += 10;
+				Redraw = 1;
+			}
+			break;
+		case 'D':
+			if(EditorMode == MODE_LEVEL) {
+				CameraX+=10; Redraw = 1;
+			} else if(EditorMode == MODE_PICKER) {
+				LayerInfos[CurLayer].CurrentCategory = NUM_SPECIAL_CATEGORIES + LayerInfos[CurLayer].Tileset->CategoryCount - 1;
+				UpdateTPRect();
+				Redraw = 1;
+			}
+			break;
+		case 'W':
+			if(EditorMode == MODE_LEVEL) {
+				CameraY-=10; Redraw = 1;
+			} else if(EditorMode == MODE_PICKER) {
+				TPBlocksYScroll -= 10;
+				if(TPBlocksYScroll < 0)
+					TPBlocksYScroll = 0;
+				Redraw = 1;
+			}
+			break;
 
 		case 'i':
 			if(EditorMode == MODE_PICKER) {
@@ -736,23 +983,39 @@ void TextInput(char Key) {
 			break;
 
 		case 'f':
-			for(LevelRect *R = LayerInfos[CurLayer].Rects; R; R=R->Next) {
-				if(R->Selected) {
-					*TempText = 0;
-					if(R->ExtraInfo) {
-						strcpy(TempText, R->ExtraInfo);
-						free(R->ExtraInfo);
-						R->ExtraInfo = NULL;
+			if(EditorMode == MODE_LEVEL) {
+				for(LevelRect *R = LayerInfos[CurLayer].Rects; R; R=R->Next) {
+					if(R->Selected) {
+						*TempText = 0;
+						if(R->ExtraInfo) {
+							strcpy(TempText, R->ExtraInfo);
+							free(R->ExtraInfo);
+							R->ExtraInfo = NULL;
+						}
+						InputLine("Rectangle extra info", TempText, sizeof(TempText));
+						if(*TempText)
+							R->ExtraInfo = strdup(TempText);
+						Redraw = 1;
+						break;
 					}
-					InputLine("Rectangle extra info", TempText, sizeof(TempText));
-					if(*TempText)
-						R->ExtraInfo = strdup(TempText);
-					Redraw = 1;
-					break;
 				}
+			} else if(EditorMode == MODE_PICKER) {
+				TPSearchText[0] = 0;
+				InputLine("Search for...", TPSearchText, sizeof(TPSearchText));
+				UpdateTPRect();
+				Redraw = 1;
 			}
 			break;
 	}
+}
+
+void DrawSelectionBox(int x, int y, int w, int h, SDL_Color *Color) {
+	SDL_Rect Select = {x, y, w, h};
+	SDL_SetRenderDrawColor(ScreenRenderer, Color->r, Color->g, Color->b, 255);
+	SDL_SetRenderDrawBlendMode(ScreenRenderer, SDL_BLENDMODE_MOD);
+	SDL_RenderFillRect(ScreenRenderer, &Select);
+	SDL_SetRenderDrawBlendMode(ScreenRenderer, SDL_BLENDMODE_NONE);
+	SDL_RenderDrawRect(ScreenRenderer, &Select);
 }
 
 void DrawGUI() {
@@ -813,21 +1076,20 @@ void DrawGUI() {
 			sprintf(Temp2, "<%ix%i> ", SelectedRect->W, SelectedRect->H);
 
 		// Check for slope stuff
-		TilesetEntry *DrawInfo = &LayerInfos[CurLayer].TilesetLookup[SelectedRect->Type];
+		TilesetEntry *DrawInfo = &LayerInfos[CurLayer].Tileset->TilesetLookup[SelectedRect->Type];
 		if(DrawInfo->Style == STYLE_RIGHT_TRIANGLE) {
 			double Ratio = (double)SelectedRect->W / (double)SelectedRect->H;
 			sprintf(TempText, "%.3f", Ratio);
 
 			if(floorf(Ratio) == Ratio && Ratio) { // Integer ratio
-				if(DrawInfo->Var & (1 << ((int)Ratio-1)))
+				if(DrawInfo->Shape.Var & (1 << ((int)Ratio-1)))
 					strcat(TempText, " \xE2\x9C\x93 "); // Checkmark
 			}
 			strcat(Temp2, TempText);
 		}
 
-		int Graphic = LayerInfos[CurLayer].TilesetLookup[SelectedRect->Type].Id;
-		blitf(LayerInfos[CurLayer].Texture, ScreenRenderer, (Graphic&255)*TileW, (Graphic>>8)*TileH, 5, 5+MainFont.Height*1, TileW, TileH, SelectedRect->Flips);
-		RenderFormatText(ScreenRenderer, &MainFont, 5+TileW+5, 5+MainFont.Height*1, 0, "%s %s%s", LayerInfos[CurLayer].TilesetLookup[SelectedRect->Type].Name, Temp2, SelectedRect->ExtraInfo?SelectedRect->ExtraInfo:"");
+		DrawTilesetEntry(&LayerInfos[CurLayer].Tileset->TilesetLookup[SelectedRect->Type], 5, 5+MainFont.Height*1, SelectedRect->Flips);
+		RenderFormatText(ScreenRenderer, &MainFont, 5+TileW+5, 5+MainFont.Height*1, 0, "%s %s%s", LayerInfos[CurLayer].Tileset->TilesetLookup[SelectedRect->Type].Name, Temp2, SelectedRect->ExtraInfo?SelectedRect->ExtraInfo:"");
 	} else if(SelectedCount > 1) {
 		RenderFormatText(ScreenRenderer, &MainFont, 5+TileW+5, 5+MainFont.Height*1, 0, "(%i selected)", SelectedCount);
 	}
@@ -849,18 +1111,33 @@ void DrawGUI() {
 					LevelTile Tile = LayerInfos[L].Map[RealY*LayerInfos[L].LayerWidth+RealX];
 
 					// Is there a tile here?
-					if(Tile.Graphic != -1) {
-						if(!Tile.DrawInfo) { // Regular rectangles
-							// Draw with flips
-							if(Tile.Flips == 0)
-								blit(LayerInfos[L].Texture, ScreenRenderer, (Tile.Graphic&255)*TileW, (Tile.Graphic>>8)*TileH, MapViewX+x*TileW, MapViewY+y*TileH, TileW, TileH);
-							else
-								blitf(LayerInfos[L].Texture, ScreenRenderer, (Tile.Graphic&255)*TileW, (Tile.Graphic>>8)*TileH, MapViewX+x*TileW, MapViewY+y*TileH, TileW, TileH, Tile.Flips);
+					if(Tile.DrawInfo != NULL) {
+						if(Tile.DrawInfo->Style != STYLE_RIGHT_TRIANGLE) { // Regular rectangles
+							blitf(Tile.Texture, ScreenRenderer,
+								XFromTile(Tile.Tiles[0])*TileW/2,
+								YFromTile(Tile.Tiles[0])*TileH/2,
+								MapViewX+x*TileW, MapViewY+y*TileH,
+								TileW/2, TileH/2, FlipsFromTile(Tile.Tiles[0]));
+							blitf(Tile.Texture, ScreenRenderer,
+								XFromTile(Tile.Tiles[1])*TileW/2,
+								YFromTile(Tile.Tiles[1])*TileH/2,
+								MapViewX+x*TileW+TileW/2, MapViewY+y*TileH,
+								TileW/2, TileH/2, FlipsFromTile(Tile.Tiles[1]));
+							blitf(Tile.Texture, ScreenRenderer,
+								XFromTile(Tile.Tiles[2])*TileW/2,
+								YFromTile(Tile.Tiles[2])*TileH/2,
+								MapViewX+x*TileW, MapViewY+y*TileH+TileH/2,
+								TileW/2, TileH/2, FlipsFromTile(Tile.Tiles[2]));
+							blitf(Tile.Texture, ScreenRenderer,
+								XFromTile(Tile.Tiles[3])*TileW/2,
+								YFromTile(Tile.Tiles[3])*TileH/2,
+								MapViewX+x*TileW+TileW/2, MapViewY+y*TileH+TileH/2,
+								TileW/2, TileH/2, FlipsFromTile(Tile.Tiles[3]));
 						} else { // Nonstandard shapes
 							if(Tile.DrawInfo->Style == STYLE_RIGHT_TRIANGLE) {
 								SDL_Rect Clip = {MapViewX+x*TileW, MapViewY+y*TileH, TileW, TileH};
 								SDL_RenderSetClipRect(ScreenRenderer, &Clip);
-								SDL_SetRenderDrawColor(ScreenRenderer, Tile.DrawInfo->R, Tile.DrawInfo->G, Tile.DrawInfo->B, 255);
+								SDL_SetRenderDrawColor(ScreenRenderer, Tile.DrawInfo->Shape.R, Tile.DrawInfo->Shape.G, Tile.DrawInfo->Shape.B, 255);
 
 								LevelRect *R = Tile.Rect;
 								int RectBaseX = MapViewX + (R->X * TileW) - (CameraX * TileW);
@@ -966,43 +1243,111 @@ void DrawGUI() {
 
 	// Draw outline around the map edit view
 	SDL_SetRenderDrawColor(ScreenRenderer, FGColor.r, FGColor.g, FGColor.b, 255);
-	rect(ScreenRenderer, MapViewX, MapViewY, MapViewX+MapViewWidthP, MapViewY+MapViewHeightP);
+	rect(ScreenRenderer, MapViewX, MapViewY, MapViewWidthP+1, MapViewHeightP+1);
 
 	// Draw the tile picker
 	if(EditorMode == MODE_PICKER) {
+		int mouseX, mouseY;
+		SDL_GetMouseState(&mouseX, &mouseY);
+
 		SDL_SetRenderDrawColor(ScreenRenderer, 255, 255, 255, 255);
 		SDL_RenderFillRect(ScreenRenderer, &TPRect);
 
-		for(int i=0; i<TPTilesWide; i++) {
-			for(int j=0; j<TPTilesTall; j++) {
-				blit(TPTexture, ScreenRenderer, i*TileW, j*TileH, TPRect.x+i*(TileW+2)+1, TPRect.y+j*(TileH+2)+1, TileW, TileH);
-			}
-		}
-
 		// Cursor
-		SDL_Rect Select = {TPRect.x+TPCursorX*(TileW+2), TPRect.y+TPCursorY*(TileH+2), TileW+2, TileH+2};
-		SDL_SetRenderDrawColor(ScreenRenderer, SelectColor.r, SelectColor.g, SelectColor.b, 255);
-		SDL_SetRenderDrawBlendMode(ScreenRenderer, SDL_BLENDMODE_MOD);
-		SDL_RenderFillRect(ScreenRenderer, &Select);
-		SDL_SetRenderDrawBlendMode(ScreenRenderer, SDL_BLENDMODE_NONE);
-		SDL_RenderDrawRect(ScreenRenderer, &Select);
+		DrawSelectionBox(TPBlocksRect.x+TPCursorX*(TileW+2), TPBlocksRect.y+TPCursorY*(TileH+2), TileW+2, TileH+2, &SelectColor);
+
+		// Backgrounds behind text inputs
+		SDL_SetRenderDrawColor(ScreenRenderer, BGColor.r, BGColor.g, BGColor.b, 255);
+		SDL_RenderFillRect(ScreenRenderer, &TPCategoryNameRect);
+		SDL_RenderFillRect(ScreenRenderer, &TPBlockNameRect);
 
 		// Draw the outline
 		SDL_SetRenderDrawColor(ScreenRenderer, FGColor.r, FGColor.g, FGColor.b, 255);
-		rect(ScreenRenderer, TPRect.x-1, TPRect.y-1, TPRect.x+TPRect.w, TPRect.y+TPRect.h);
+		int left = TPRect.x;
+		int right = TPRect.x+TPRect.w-1;
+		SDL_RenderDrawLine(ScreenRenderer, left, TPCategoryNameRect.y+TPCategoryNameRect.h, right, TPCategoryNameRect.y+TPCategoryNameRect.h);
+		SDL_RenderDrawLine(ScreenRenderer, left, TPCategoriesRect.y+TPCategoriesRect.h, right, TPCategoriesRect.y+TPCategoriesRect.h);
+		SDL_RenderDrawLine(ScreenRenderer, left, TPHotbarRect.y+TPHotbarRect.h, right, TPHotbarRect.y+TPHotbarRect.h);
+		SDL_RenderDrawLine(ScreenRenderer, left, TPBlockNameRect.y+TPBlockNameRect.h, right, TPBlockNameRect.y+TPBlockNameRect.h);
+		rect(ScreenRenderer, TPRect.x-1, TPRect.y-1, TPRect.w+2, TPRect.h+2);
+
+		// Display hotbar
+		for(int i=0; i<9; i++) {
+			rect(ScreenRenderer, TPHotbarRect.x+35+i*36, TPHotbarRect.y, 2, TPHotbarRect.h);
+		}
+		for(int i=0; i<10; i++) {
+			RenderFormatText(ScreenRenderer, &MainFont, TPHotbarRect.x+1+i*36, TPHotbarRect.y+1, SIMPLE_TEXT_ON_WHITE, "%d", (i+1)%10);
+			DrawTilesetEntry(&LayerInfos[CurLayer].Tileset->TilesetLookup[LayerInfos[CurLayer].Tileset->HotbarType[i]],
+				TPHotbarRect.x+14+i*36, TPHotbarRect.y+1, SDL_FLIP_NONE);
+		}
+		rect(ScreenRenderer, TPRect.x-1, TPRect.y-1, TPRect.w+2, TPRect.h+2);
+
+		// Offer to click on a hotbar
+		if(IsInsideRect(mouseX, mouseY, TPHotbarRect.x, TPHotbarRect.y, TPHotbarRect.w, TPHotbarRect.h)) {
+			DrawSelectionBox(TPHotbarRect.x+((mouseX-TPHotbarRect.x)/36*36), TPHotbarRect.y, 36, TPHotbarRect.h, &AvailableColor);
+		}
+
+		// Display available categories
+		int last_category_index = NUM_SPECIAL_CATEGORIES + LayerInfos[CurLayer].Tileset->CategoryCount - 1;
+		for(int i=0; i<LayerInfos[CurLayer].Tileset->CategoryCount + NUM_SPECIAL_CATEGORIES; i++) {
+			int x = TPCategoriesRect.x + (i%TP_BLOCKS_PER_ROW) * 18 + 1;
+			int y = TPCategoriesRect.y + (i/TP_BLOCKS_PER_ROW) * 18 + 1;
+			if(i == 0) {
+				blit(UITexture, ScreenRenderer, 0, 0, x, y, 16, 16);
+			} else if(i == last_category_index) {
+				blit(UITexture, ScreenRenderer, 16, 0, x, y, 16, 16);
+			} else if(i == last_category_index - 1) {
+				blit(UITexture, ScreenRenderer, 32, 0, x, y, 16, 16);
+			} else {
+				if(LayerInfos[CurLayer].Tileset->CategoryIcons[i-1])
+					DrawTilesetEntry(&LayerInfos[CurLayer].Tileset->TilesetLookup[LayerInfos[CurLayer].Tileset->CategoryIcons[i-1]],
+					x, y, SDL_FLIP_NONE);
+				else
+					blit(UITexture, ScreenRenderer, (i%8)*16, 16, x, y, 16, 16);
+			}
+			if(LayerInfos[CurLayer].CurrentCategory == i)
+				DrawSelectionBox(x, y, 16, 16, &SelectColor);
+		}
+
+		// Display available blocks
+		for(int i=TPBlocksYScroll * TP_BLOCKS_PER_ROW, index_in_picker=0; i<TPBlocksInCategoryCount; i++, index_in_picker++) {
+			int x = index_in_picker % TP_BLOCKS_PER_ROW;
+			int y = index_in_picker / TP_BLOCKS_PER_ROW;
+			DrawTilesetEntry(&LayerInfos[CurLayer].Tileset->TilesetLookup[TPBlocksInCategory[i]], TPBlocksRect.x+x*(TileW+2)+1, TPBlocksRect.y+y*(TileH+2)+1, SDL_FLIP_NONE);
+		}
+
+		const char *category_name = "";
+		if(LayerInfos[CurLayer].CurrentCategory == 0) {
+			category_name = "Everything";
+		} else if(LayerInfos[CurLayer].CurrentCategory == last_category_index) {
+			category_name = "Recent tiles";
+		} else if(LayerInfos[CurLayer].CurrentCategory == last_category_index - 1) {
+			category_name = "Starred tiles";
+		} else {
+			category_name = LayerInfos[CurLayer].Tileset->Categories[LayerInfos[CurLayer].CurrentCategory - 1];
+		}
+		if(TPSearchText[0]) {
+			sprintf(TempText, "%s (%s)", category_name, TPSearchText);
+			category_name = TempText;
+		}
+		RenderSimpleText(ScreenRenderer, &MainFont, TPRect.x, TPCategoryNameRect.y+2, 0, category_name);
+
+		int hovered_block = (TPCursorY+TPBlocksYScroll) * TP_BLOCKS_PER_ROW + TPCursorX;
+		if(hovered_block >= 0 && hovered_block < TPBlocksInCategoryCount)
+			RenderSimpleText(ScreenRenderer, &MainFont, TPRect.x, TPBlockNameRect.y+2, 0, LayerInfos[CurLayer].Tileset->TilesetLookup[TPBlocksInCategory[hovered_block]].Name);
 	}
 
 	SDL_RenderPresent(ScreenRenderer);
 }
 
-void run_gui() {
+void run_gui(const char *filename) {
 	// .-----------------------------------------------------------------------
 	// | INITIALIZE EVERYTHING
 	// '-----------------------------------------------------------------------
 	window = SDL_CreateWindow("Princess Edit 2", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, ScreenWidth, ScreenHeight, SDL_WINDOW_SHOWN | SDL_WINDOW_RESIZABLE);
 	if(!window) {
-		 SDL_MessageBox(SDL_MESSAGEBOX_ERROR, "Error", NULL, "Window could not be created! SDL_Error: %s", SDL_GetError());
-		 return;
+		SDL_MessageBox(SDL_MESSAGEBOX_ERROR, "Error", NULL, "Window could not be created! SDL_Error: %s", SDL_GetError());
+		return;
 	}
 	if(!(IMG_Init(IMG_INIT_PNG) & IMG_INIT_PNG)){
 		SDL_MessageBox(SDL_MESSAGEBOX_ERROR, "Error", NULL, "SDL_image could not initialize! SDL_image Error: %s", IMG_GetError());
@@ -1030,12 +1375,34 @@ void run_gui() {
 	SystemCursors[SYSCURSOR_DISABLE] = SDL_CreateSystemCursor(SDL_SYSTEM_CURSOR_NO);
 
 	if (!Load_FontSet(&MainFont, 14, "data/font/font.ttf", "data/font/fontb.ttf", "data/font/fonti.ttf", "data/font/fontbi.ttf"))
-		return;
+		goto exit;
 	if (!Load_FontSet(&TinyFont, 10, "data/font/font.ttf", "data/font/fontb.ttf", "data/font/fonti.ttf", "data/font/fontbi.ttf"))
-		return;
+		goto exit;
 	if (!Load_FontSet(&VeryTinyFont, 8, "data/font/font.ttf", "data/font/fontb.ttf", "data/font/fonti.ttf", "data/font/fontbi.ttf"))
-		return;
-	LoadTilesets();
+		goto exit;
+	UITexture = LoadTexture("data/ui.png", 0);
+
+	// .-----------------------------------------------------------------------
+	// | LOAD THE LEVEL
+	// '-----------------------------------------------------------------------
+
+	FILE *Test = fopen(filename, "rb");
+	if(Test) {
+		fclose(Test);
+		if(!LoadLevel(filename)) {
+			SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Can't load %s", filename);
+			return;
+		}
+	} else {
+		char Temp[250];
+		sprintf(Temp, "%sdata/default.json", BasePath);
+		if(!LoadLevel(Temp)) {
+			SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Can't load default level");
+			return;
+		}
+		strlcpy(LevelFilename, FilenameOnly(filename), sizeof(LevelFilename));
+		strlcpy(LevelFilenameFull, filename, sizeof(LevelFilenameFull));
+	}
 
 	// .-----------------------------------------------------------------------
 	// | EVENT LOOP
@@ -1083,11 +1450,12 @@ void run_gui() {
 		SDL_Delay(17);
 		retraces++;
 	}
+exit:
 	for(int i=0;i<SYSCURSOR_MAX;i++)
 		SDL_FreeCursor(SystemCursors[i]);
 	Free_FontSet(&MainFont);
 	Free_FontSet(&TinyFont);
 	Free_FontSet(&VeryTinyFont);
-
-	SDL_Quit();
+	if(UITexture)
+		SDL_DestroyTexture(UITexture);
 }

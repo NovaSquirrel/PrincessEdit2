@@ -18,9 +18,10 @@
  */
 #include "editor.h"
 
-void run_gui();
+void run_gui(const char *filename);
 char *PrefPath = NULL;
 char *BasePath = NULL;
+char LevelDirectory[FILENAME_PATH_LEN];
 
 int main(int argc, char *argv[]) {
 	if(argc != 2) {
@@ -38,26 +39,16 @@ int main(int argc, char *argv[]) {
 	BasePath = SDL_GetBasePath();
 	if(!BasePath)
 		BasePath = SDL_strdup("./");
+	sprintf(TextureSearchPaths[0], "%sdata/tiles/", BasePath);
 
-	FILE *Test = fopen(argv[1], "rb");
-	if(Test) {
-		fclose(Test);
-		if(!LoadLevel(argv[1])) {
-			SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Can't load %s", argv[1]);
-			return 0;
-		}
-	} else {
-		char Temp[250];
-		sprintf(Temp, "%sdata/default.json", BasePath);
-		if(!LoadLevel(Temp)) {
-			SDL_LogInfo(SDL_LOG_CATEGORY_APPLICATION, "Can't load default level");
-			return 0;
-		}
-		strlcpy(LevelFilename, FilenameOnly(argv[1]), sizeof(LevelFilename));
-		strlcpy(LevelFilenameFull, argv[1], sizeof(LevelFilenameFull));
-	}
+	// Level file path is pretty much the "current working directory"
+	strcpy(LevelDirectory, argv[1]);
+	char *Last = strrchr(LevelDirectory, '/');
+	if(!Last) Last = strrchr(LevelDirectory, '\\');
+	if(!Last) LevelDirectory[0] = 0;
+	if(Last) Last[1] = 0;
 
-	run_gui();
+	run_gui(argv[1]);
 
 	if(PrefPath) SDL_free(PrefPath);
 	if(BasePath) SDL_free(BasePath);

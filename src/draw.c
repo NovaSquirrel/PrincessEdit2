@@ -23,14 +23,16 @@ SDL_Color BGColor = {0xf0, 0xf0, 0xf0, 255};
 SDL_Color SelectColor = {0xff, 0x00, 0xff, 255};
 SDL_Color AvailableColor = {0x00, 0xff, 0xff, 255};
 SDL_Color GridColor = {0xc0, 0xc0, 0xc0, 255};
+SDL_Color WhiteColor = {0xff, 0xff, 0xff, 255};
 
 SDL_Surface *SDL_LoadImage(const char *FileName, int Flags) {
 	SDL_Surface* loadedSurface = IMG_Load(FileName);
 	if(loadedSurface == NULL) {
-		SDL_MessageBox(SDL_MESSAGEBOX_ERROR, "Error", window, "Unable to load image %s! SDL Error: %s", FileName, SDL_GetError());
+		if((Flags & LOAD_TEXTURE_NO_ERROR) == 0)
+			SDL_MessageBox(SDL_MESSAGEBOX_ERROR, "Error", window, "Unable to load image %s! SDL Error: %s", FileName, SDL_GetError());
 		return NULL;
 	}
-	if(Flags & 1)
+	if(Flags & LOAD_TEXTURE_COLOR_KEY)
 		SDL_SetColorKey(loadedSurface, SDL_TRUE, SDL_MapRGB(loadedSurface->format, 255, 0, 255));
 	return loadedSurface;
 }
@@ -44,13 +46,13 @@ SDL_Texture *LoadTexture(const char *FileName, int Flags) {
 }
 
 // drawing functions
-void rectfill(SDL_Renderer *Bmp, int X1, int Y1, int X2, int Y2) {
-	SDL_Rect Temp = {X1, Y1, abs(X2-X1)+1, abs(Y2-Y1)+1};
+void rectfill(SDL_Renderer *Bmp, int X1, int Y1, int W, int H) {
+	SDL_Rect Temp = {X1, Y1, W, H};
 	SDL_RenderFillRect(Bmp,	&Temp);
 }
 
-void rect(SDL_Renderer *Bmp, int X1, int Y1, int X2, int Y2) {
-	SDL_Rect Temp = {X1, Y1, abs(X2-X1)+1, abs(Y2-Y1)+1};
+void rect(SDL_Renderer *Bmp, int X1, int Y1, int W, int H) {
+	SDL_Rect Temp = {X1, Y1, W, H};
 	SDL_RenderDrawRect(Bmp, &Temp);
 }
 
@@ -114,7 +116,7 @@ void RenderSimpleText(SDL_Renderer *Renderer, FontSet *Font, int X, int Y, int F
 	// Skip if no text
 	if(!*Text)
 		return;
-	SDL_Surface *TextSurface2 = TTF_RenderUTF8_Shaded(Font->Font[Flags&3], Text, FGColor, BGColor);
+	SDL_Surface *TextSurface2 = TTF_RenderUTF8_Shaded(Font->Font[Flags&3], Text, FGColor, Flags&SIMPLE_TEXT_ON_WHITE?WhiteColor:BGColor);
 	SDL_Surface *TextSurface = SDL_ConvertSurfaceFormat(TextSurface2, SDL_PIXELFORMAT_RGBA8888, 0);
 	SDL_Texture *Texture;
 
