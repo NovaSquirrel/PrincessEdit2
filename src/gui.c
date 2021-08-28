@@ -107,14 +107,14 @@ void UpdateTPRect() {
 	TPRect.w = 360;
 	TPCategoryNameRect.w = TPRect.w;
 	TPCategoriesRect.w   = TPRect.w;
-	TPHotbarRect.w      = TPRect.w;
+	TPHotbarRect.w       = TPRect.w;
 	TPBlockNameRect.w    = TPRect.w;
 	TPBlocksRect.w       = TPRect.w;
 
 	TPRect.x = ScreenWidth/2-TPRect.w/2;
 	TPCategoryNameRect.x = TPRect.x;
 	TPCategoriesRect.x   = TPRect.x;
-	TPHotbarRect.x      = TPRect.x;
+	TPHotbarRect.x       = TPRect.x;
 	TPBlockNameRect.x    = TPRect.x;
 	TPBlocksRect.x       = TPRect.x;
 
@@ -123,8 +123,8 @@ void UpdateTPRect() {
 	TPCategoryNameRect.h = TP_TEXT_HEIGHT;
 	TPCategoriesRect.y   = TPCategoryNameRect.y + TPCategoryNameRect.h + 1;
 	TPCategoriesRect.h   = TP_CATEGORY_HEIGHT;
-	TPHotbarRect.y      = TPCategoriesRect.y + TPCategoriesRect.h + 1;
-	TPHotbarRect.h      = TP_HOTBAR_HEIGHT;
+	TPHotbarRect.y       = TPCategoriesRect.y + TPCategoriesRect.h + 1;
+	TPHotbarRect.h       = TP_HOTBAR_HEIGHT;
 	TPBlockNameRect.y    = TPHotbarRect.y + TPHotbarRect.h + 1;
 	TPBlockNameRect.h    = TP_TEXT_HEIGHT;
 	TPBlocksRect.y       = TPBlockNameRect.y + TPBlockNameRect.h + 1;
@@ -137,7 +137,7 @@ void UpdateTPRect() {
 	// Put everything on the window with the new calculated "center of screen" position
 	TPCategoryNameRect.y += TPRect.y;
 	TPCategoriesRect.y   += TPRect.y;
-	TPHotbarRect.y      += TPRect.y;
+	TPHotbarRect.y       += TPRect.y;
 	TPBlockNameRect.y    += TPRect.y;
 	TPBlocksRect.y       += TPRect.y;
 
