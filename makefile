@@ -14,7 +14,7 @@ ifeq ($(OS),Windows_NT)
   LDLIBS := -lmingw32 -lSDL2main -lSDL2 -lSDL2_image -lSDL2_ttf
   LDFLAGS := -Wl,-subsystem,windows
 else
-  CFLAGS := -Wall -O2 -std=gnu99 `sdl2-config -ggdb
+  CFLAGS := -Wall -O2 -std=gnu99 `sdl2-config --cflags` -ggdb -fms-extensions
   LDLIBS := -lSDL2main -lSDL2 -lSDL2_image -lSDL2_ttf
   #LDFLAGS := -Wl
 endif
