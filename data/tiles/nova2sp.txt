@@ -41,3 +41,7 @@
 0308 StrifeCloud
 0309 BurgerRiderJumper
 0400 LoadActorsAhead
+0500 Spring
+0501 Money
+0504 Heart
+0505 SmallHeart

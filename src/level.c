@@ -431,6 +431,13 @@ void ImportNova2Tileset(TilesetInfo *Tileset, int *Count, const char *TilesetNam
 			if(space) {
 				Tileset->TilesetLookup[*Count].Quad.Tiles[this_tile_index++] = ParseNova2Tile(space+1);
 			}
+		} else if(Peek[0] == 'w' && Peek[1] == ' ') {
+			uint16_t tile = ParseNova2Tile(Peek+2);
+			Tileset->TilesetLookup[*Count].Style = STYLE_QUAD;
+			Tileset->TilesetLookup[*Count].Quad.Tiles[0] = tile + 0;
+			Tileset->TilesetLookup[*Count].Quad.Tiles[1] = tile + 1;
+			Tileset->TilesetLookup[*Count].Quad.Tiles[2] = tile + 2;
+			Tileset->TilesetLookup[*Count].Quad.Tiles[3] = tile + 3;
 		} else if(Peek[0] == 'q' && Peek[1] == ' ') {
 			Tileset->TilesetLookup[*Count].Style = STYLE_SINGLE;
 			Tileset->TilesetLookup[*Count].Single.Tile = ParseNova2Tile(Peek+2);
