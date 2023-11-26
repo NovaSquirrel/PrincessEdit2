@@ -1006,6 +1006,11 @@ void TextInput(char Key) {
 				Redraw = 1;
 			}
 			break;
+
+		case 'h': // Hide
+			LayerInfos[CurLayer].LayerHidden ^= 1;
+			Redraw = 1;
+			break;
 	}
 }
 
@@ -1019,12 +1024,13 @@ void DrawSelectionBox(int x, int y, int w, int h, SDL_Color *Color) {
 }
 
 void DrawGUI() {
-	if(RerenderMap == 1) { // Rerender the first one
+	if(RerenderMap == 1) { // Rerender the current one
 		RenderLevelRects(CurLayer);
 	}
 	if(RerenderMap == 2) { // Rerender all
-		for(int i=0; i<NumLayers; i++)
-			RenderLevelRects(CurLayer);
+		for(int i=0; i<NumLayers; i++) {
+			RenderLevelRects(i);
+		}
 	}
 	RerenderMap = 0;
 
