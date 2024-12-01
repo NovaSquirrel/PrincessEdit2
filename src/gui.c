@@ -21,7 +21,9 @@
 
 int ScreenWidth = 800, ScreenHeight = 600;
 int quit = 0;
-int MapViewX = 10, MapViewY = 10, MapViewWidth = 20, MapViewHeight = 20, MapViewWidthP, MapViewHeightP;
+int MapViewX = 10, MapViewY = 10; // Coordinates of the rectangle on the screen that displays part of the level
+int MapViewWidth = 20, MapViewHeight = 20; // How big that rectangle is, in block (usually 16x16) units
+int MapViewWidthP, MapViewHeightP; // How big that rectangle is, in pixel units
 
 SDL_Window *window = NULL;
 SDL_Renderer *ScreenRenderer = NULL;
@@ -89,6 +91,13 @@ void WarpForTP() {
 		SDL_WarpMouseInWindow(window, SavedTPX, SavedTPY);
 	else
 		SDL_WarpMouseInWindow(window, TPRect.x+TPRect.w/2, TPRect.y+TPRect.h/2);
+}
+
+void EnforceCameraBounds() {
+	if(CameraX < 0) CameraX = 0;
+	if(CameraY < 0) CameraY = 0;
+	if((CameraX + MapViewWidth) > LevelW) CameraX = LevelW - MapViewWidth;
+	if((CameraY + MapViewHeight) > LevelH) CameraY = LevelH - MapViewHeight;
 }
 
 int MatchesSearch(const char *name) {
@@ -342,12 +351,15 @@ void MouseMove(int x, int y) {
 	if(EditorMode == MODE_LEVEL) {
 		// If the mouse is inside the map view
 		if(IsInsideRect(x, y, MapViewX, MapViewY, MapViewWidthP, MapViewHeightP)) {
-            int NewX = (x - MapViewX) / TileW;
-            int NewY = (y - MapViewY) / TileH;
-			if(NewY < 0) return;
+			int MapXWithinView = (x - MapViewX) / TileW;
+			int MapYWithinView = (y - MapViewY) / TileH;
+			if(MapXWithinView < 0 || MapYWithinView < 0)
+				return;
 
 			// Offer a rectangle to click on
-			AvailableRect = LayerInfos[CurLayer].Map[(NewY+CameraY)*LayerInfos[CurLayer].LayerWidth+(NewX+CameraX)].Rect;
+			if(!IsInsideRect(MapXWithinView+CameraX, MapYWithinView+CameraY, 0, 0, LayerInfos[CurLayer].LayerWidth, LayerInfos[CurLayer].LayerHeight))
+				return;
+			AvailableRect = LayerInfos[CurLayer].Map[(MapYWithinView+CameraY)*LayerInfos[CurLayer].LayerWidth+(MapXWithinView+CameraX)].Rect;
 			if(AvailableRect)
 				GUI_SetCursor(SYSCURSOR_HAND);
 			if(AvailableRect && AvailableRect->Selected)
@@ -387,10 +399,10 @@ void MouseMove(int x, int y) {
 			}
 
 			// Moved to another map tile
-			if(NewX != CursorX || NewY != CursorY || !CursorShown) {
+			if(MapXWithinView != CursorX || MapYWithinView != CursorY || !CursorShown) {
 				Redraw = 1;
-				int DiffX = NewX-CursorX;
-				int DiffY = NewY-CursorY;
+				int DiffX = MapXWithinView-CursorX;
+				int DiffY = MapYWithinView-CursorY;
 
 				// Drag selected rectangles
 				if(DraggingMove) {
@@ -428,8 +440,8 @@ void MouseMove(int x, int y) {
 					RerenderMap = 1;
 				}
 
-				CursorX = NewX;
-				CursorY = NewY;
+				CursorX = MapXWithinView;
+				CursorY = MapYWithinView;
 
 				// Update the selections
 				if(DraggingSelect) {
@@ -445,6 +457,8 @@ void MouseMove(int x, int y) {
 					// Mark everything inside the selection as selected
 					for(int x=X1; x<=X2; x++) {
 						for(int y=Y1; y<=Y2; y++) {
+							if(!IsInsideRect(x+CameraX, y+CameraY, 0, 0, LayerInfos[CurLayer].LayerWidth, LayerInfos[CurLayer].LayerHeight))
+								continue;
 							LevelRect *R = LayerInfos[CurLayer].Map[(y+CameraY)*LayerInfos[CurLayer].LayerWidth+(x+CameraX)].Rect;
 							if(R)
 								R->Selected = 1;
@@ -521,6 +535,8 @@ void LeftClick() {
 				return;
 			}
 
+			if(!IsInsideRect(CursorY+CameraX, CursorY+CameraY, 0, 0, LayerInfos[CurLayer].LayerWidth, LayerInfos[CurLayer].LayerHeight))
+				return;
 			LevelRect *Under = LayerInfos[CurLayer].Map[(CursorY+CameraY)*LayerInfos[CurLayer].LayerWidth+(CursorX+CameraX)].Rect;
 			// Ctrl-click
 			if(SDL_GetModState() & KMOD_CTRL) {
@@ -763,6 +779,7 @@ void TextInput(char Key) {
 		case 'a':
 			if(EditorMode == MODE_LEVEL) {
 				CameraX--; Redraw = 1;
+				EnforceCameraBounds();
 			} else if(EditorMode == MODE_PICKER) {
 				if(LayerInfos[CurLayer].CurrentCategory == 0) {
 					LayerInfos[CurLayer].CurrentCategory = LayerInfos[CurLayer].Tileset->CategoryCount + NUM_SPECIAL_CATEGORIES - 1;
@@ -777,6 +794,7 @@ void TextInput(char Key) {
 		case 's':
 			if(EditorMode == MODE_LEVEL) {
 				CameraY++; Redraw = 1;
+				EnforceCameraBounds();
 			} else if(EditorMode == MODE_PICKER) {
 				TPBlocksYScroll++;
 				Redraw = 1;
@@ -785,6 +803,7 @@ void TextInput(char Key) {
 		case 'd':
 			if(EditorMode == MODE_LEVEL) {
 				CameraX++; Redraw = 1;
+				EnforceCameraBounds();
 			} else if(EditorMode == MODE_PICKER) {
 				if(LayerInfos[CurLayer].CurrentCategory == LayerInfos[CurLayer].Tileset->CategoryCount + NUM_SPECIAL_CATEGORIES - 1) {
 					LayerInfos[CurLayer].CurrentCategory = 0;
@@ -799,6 +818,7 @@ void TextInput(char Key) {
 		case 'w':
 			if(EditorMode == MODE_LEVEL) {
 				CameraY--; Redraw = 1;
+				EnforceCameraBounds();
 			} else if(EditorMode == MODE_PICKER) {
 				if(TPBlocksYScroll)
 					TPBlocksYScroll--;
@@ -808,6 +828,7 @@ void TextInput(char Key) {
 		case 'A':
 			if(EditorMode == MODE_LEVEL) {
 				CameraX-=10; Redraw = 1;
+				EnforceCameraBounds();
 			} else if(EditorMode == MODE_PICKER) {
 				LayerInfos[CurLayer].CurrentCategory = 0;
 				UpdateTPRect();
@@ -817,6 +838,7 @@ void TextInput(char Key) {
 		case 'S':
 			if(EditorMode == MODE_LEVEL) {
 				CameraY+=10; Redraw = 1;
+				EnforceCameraBounds();
 			} else if(EditorMode == MODE_PICKER) {
 				TPBlocksYScroll += 10;
 				Redraw = 1;
@@ -825,6 +847,7 @@ void TextInput(char Key) {
 		case 'D':
 			if(EditorMode == MODE_LEVEL) {
 				CameraX+=10; Redraw = 1;
+				EnforceCameraBounds();
 			} else if(EditorMode == MODE_PICKER) {
 				LayerInfos[CurLayer].CurrentCategory = NUM_SPECIAL_CATEGORIES + LayerInfos[CurLayer].Tileset->CategoryCount - 1;
 				UpdateTPRect();
@@ -834,6 +857,7 @@ void TextInput(char Key) {
 		case 'W':
 			if(EditorMode == MODE_LEVEL) {
 				CameraY-=10; Redraw = 1;
+				EnforceCameraBounds();
 			} else if(EditorMode == MODE_PICKER) {
 				TPBlocksYScroll -= 10;
 				if(TPBlocksYScroll < 0)
@@ -1044,10 +1068,7 @@ void DrawGUI() {
 	MapViewX = (ScreenWidth / 2) - (MapViewWidthP / 2);
 	MapViewY = ((ScreenHeight - 80) / 2) - (MapViewHeightP / 2) + 80;
 
-	if(CameraX < 0) CameraX = 0;
-	if(CameraY < 0) CameraY = 0;
-	if((CameraX + MapViewWidth) > LevelW) CameraX = LevelW - MapViewWidth;
-	if((CameraY + MapViewHeight) > LevelH) CameraY = LevelH - MapViewHeight;
+	EnforceCameraBounds();
 	SDL_SetRenderDrawColor(ScreenRenderer, BGColor.r, BGColor.g, BGColor.b, 255);
 	SDL_RenderClear(ScreenRenderer);
 
@@ -1114,6 +1135,8 @@ void DrawGUI() {
 			for(int y=0;y<MapViewHeight;y++)
 				for(int x=0;x<MapViewWidth;x++) {
 					int RealX = x+CameraX, RealY = y+CameraY;
+					if(!IsInsideRect(RealX, RealY, 0, 0, LayerInfos[L].LayerWidth, LayerInfos[L].LayerHeight))
+						continue;
 					LevelTile Tile = LayerInfos[L].Map[RealY*LayerInfos[L].LayerWidth+RealX];
 
 					// Is there a tile here?
